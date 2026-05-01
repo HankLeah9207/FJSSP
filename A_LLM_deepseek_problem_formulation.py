@@ -16,23 +16,24 @@ import sys
 import json
 import time
 import datetime
-import requests
+import httpx
+from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
 
-PROJECT_ROOT = "/media/anomalymous/2C0A78860A784EB8/SWJTU/math"
+PROJECT_ROOT = "./"
 INPUT_DOCX = os.path.join(PROJECT_ROOT, "2026-51MCM-Problem B.docx")
 INPUT_XLSX = os.path.join(PROJECT_ROOT, "B-附件.xlsx")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "FJSSP")
 OUTPUT_MD = os.path.join(OUTPUT_DIR, "A_deepseek_problem_formulation.md")
 OUTPUT_LOG = os.path.join(OUTPUT_DIR, "A_deepseek_problem_formulation_log.json")
 
-DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-pro")
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
 MAX_RETRIES = 3
 BASE_BACKOFF = 2.0
@@ -214,44 +215,51 @@ def call_deepseek(messages, temperature=0.7, label=""):
         print("ERROR: DEEPSEEK_API_KEY environment variable is not set.")
         sys.exit(1)
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-    }
-    payload = {
-        "model": DEEPSEEK_MODEL,
-        "messages": messages,
-        "temperature": temperature,
-        "max_tokens": 4096,
-    }
+    # Fix socks:// → socks5:// in proxy env vars so httpx can parse them correctly
+    for var in ("ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
+        val = os.environ.get(var, "")
+        if val.startswith("socks://"):
+            os.environ[var] = "socks5://" + val[len("socks://"):]
+
+    proxy_url = (
+        os.environ.get("ALL_PROXY")
+        or os.environ.get("all_proxy")
+        or os.environ.get("HTTPS_PROXY")
+        or os.environ.get("https_proxy")
+        or None
+    )
+    http_client = httpx.Client(proxy=proxy_url, timeout=REQUEST_TIMEOUT) if proxy_url else httpx.Client(timeout=REQUEST_TIMEOUT)
+
+    client = OpenAI(
+        api_key=DEEPSEEK_API_KEY,
+        base_url=DEEPSEEK_BASE_URL,
+        http_client=http_client,
+    )
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            resp = requests.post(
-                DEEPSEEK_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=REQUEST_TIMEOUT,
+            response = client.chat.completions.create(
+                model=DEEPSEEK_MODEL,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=4096,
+                stream=False,
+                reasoning_effort="high",
+                extra_body={"thinking": {"type": "enabled"}}
             )
-            if resp.status_code == 200:
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                log_entry = {
-                    "label": label,
-                    "timestamp": datetime.datetime.now().isoformat(),
-                    "request_messages": messages,
-                    "temperature": temperature,
-                    "response_content": content,
-                    "model": DEEPSEEK_MODEL,
-                }
-                call_log.append(log_entry)
-                return content
+            content = response.choices[0].message.content
+            log_entry = {
+                "label": label,
+                "timestamp": datetime.datetime.now().isoformat(),
+                "request_messages": messages,
+                "temperature": temperature,
+                "response_content": content,
+                "model": DEEPSEEK_MODEL,
+            }
+            call_log.append(log_entry)
+            return content
 
-            print(
-                f"  [{label}] HTTP {resp.status_code} on attempt {attempt}/{MAX_RETRIES}: "
-                f"{resp.text[:200]}"
-            )
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             print(f"  [{label}] Request error on attempt {attempt}/{MAX_RETRIES}: {e}")
 
         if attempt < MAX_RETRIES:
