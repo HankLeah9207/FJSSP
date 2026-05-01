@@ -1,4 +1,3 @@
-import math
 import csv
 
 try:
@@ -101,7 +100,7 @@ for (u, v), t in _RAW_TRANSPORT.items():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# MODEL
+# MODEL — asynchronous operation-level CP-SAT formulation
 # ═══════════════════════════════════════════════════════════════════════
 
 def main():
@@ -113,36 +112,45 @@ def main():
         }
     all_pids = [p[0] for p in PROCESSES]
 
-    total_proc = sum(max(d for _, d in p[2]) for p in PROCESSES)
+    # Horizon: sum of all operation durations + transport buffer
+    total_op = sum(dur for _, _, eq in PROCESSES for _, dur in eq)
     max_travel = max(TRANSPORT.values())
-    horizon = total_proc + max_travel * (len(all_pids) + 1)
+    horizon = total_op + max_travel * (len(all_pids) + len(ALL_UNITS) + 1)
 
     model = cp_model.CpModel()
 
-    # ── Process start / completion variables ──────────────────────────
-    S = {}
-    PCT = {}
-    for pid in all_pids:
-        S[pid] = model.new_int_var(0, horizon, f"S_{pid}")
-        PCT[pid] = model.new_int_var(0, horizon, f"PCT_{pid}")
-
-    # PCT >= S + p  for every required equipment type
+    # ── Operation-level start variables ───────────────────────────────
+    # op_start[(pid, etype)] is the start time of the operation that
+    # equipment of type `etype` performs on process `pid`. Multiple
+    # operations of the same process may start asynchronously.
+    op_start = {}
+    op_end_expr = {}  # linear expression: op_start + duration
     for pid in all_pids:
         for etype, dur in proc_info[pid]["equipment"].items():
-            model.add(PCT[pid] >= S[pid] + dur)
+            v = model.new_int_var(0, horizon, f"s_{pid}_{etype}")
+            op_start[(pid, etype)] = v
+            op_end_expr[(pid, etype)] = v + dur
 
-    # Intra-workshop precedence: S_succ >= PCT_pred
+    # Process completion = max over operation end times
+    PCT = {}
+    for pid in all_pids:
+        PCT[pid] = model.new_int_var(0, horizon, f"PCT_{pid}")
+        ends = [op_end_expr[(pid, t)] for t in proc_info[pid]["equipment"]]
+        model.add_max_equality(PCT[pid], ends)
+
+    # Intra-workshop precedence: every operation of succ starts after PCT[pred]
     for pred, succ in PRECEDENCES:
-        model.add(S[succ] >= PCT[pred])
+        for etype in proc_info[succ]["equipment"]:
+            model.add(op_start[(succ, etype)] >= PCT[pred])
 
     # ── Assignment variables ──────────────────────────────────────────
-    # assign[(pid, etype, uid)] = 1  iff unit uid serves process pid
+    # assign[(pid, etype, uid)] = 1 iff unit uid serves process pid
     assign = {}
     for pid in all_pids:
         for etype in proc_info[pid]["equipment"]:
             for uid in EQUIPMENT_UNITS[etype]:
                 assign[(pid, etype, uid)] = model.new_bool_var(
-                    f"a_{pid}_{uid}"
+                    f"a_{pid}_{etype}_{uid}"
                 )
 
     # Exactly one unit of each required type per process
@@ -153,77 +161,102 @@ def main():
                     for uid in EQUIPMENT_UNITS[etype]) == 1
             )
 
-    # ── Per-unit candidate lists ──────────────────────────────────────
+    # ── Per-unit candidate node lists ─────────────────────────────────
+    # Each unit's candidate nodes are operations whose required type
+    # matches the unit's type.
     unit_cands = {uid: [] for uid in ALL_UNITS}
     for pid in all_pids:
         for etype in proc_info[pid]["equipment"]:
-            dur = proc_info[pid]["equipment"][etype]
             for uid in EQUIPMENT_UNITS[etype]:
-                unit_cands[uid].append((pid, etype, dur))
+                unit_cands[uid].append((pid, etype))
 
-    # ── Pairwise sequencing ───────────────────────────────────────────
+    # ── Path-style direct-successor arc model per equipment unit ──────
     #
-    # For each equipment unit k, every pair of candidate processes that
-    # are both assigned to k must be ordered.  The time gap between them
-    # uses the EQUIPMENT's own processing time (early release), not the
-    # process completion time.
+    # For each equipment unit `uid` we build a directed graph whose
+    # nodes are SOURCE, all candidate operations of `uid`, and SINK.
+    # CP-SAT's AddCircuit constraint enforces that the selected arcs
+    # form a single Hamiltonian circuit on the present nodes. To allow
+    # candidate nodes to be skipped (when the unit is not assigned to
+    # that operation), each candidate has a self-loop arc whose literal
+    # equals NOT(assign[node]).
     #
-    # Validity of pairwise ordering:
-    #   If processes i, j, l are all on unit k in the order i→j→l, the
-    #   non-consecutive constraint  S_l >= S_i + p_{i,t} + τ(w_i, w_l)
-    #   is always dominated by the chain
-    #     S_l >= S_j + p_j + τ(w_j, w_l) >= S_i + p_i + τ(w_i, w_j) + p_j + τ(w_j, w_l)
-    #   because p_j >= 0 and transport times satisfy the triangle
-    #   inequality (based on physical distances).  Therefore pairwise
-    #   ordering never over-constrains the schedule.
-
-    seq = {}
+    # Selected real arcs carry travel-time constraints between the
+    # connected operations' start/end times. The SOURCE→node arc
+    # enforces base→workshop travel; node→node enforces inter-workshop
+    # travel using early equipment release (operation end, not PCT).
 
     for uid in ALL_UNITS:
         cands = unit_cands[uid]
         if not cands:
             continue
+        etype_uid = UNIT_TYPE[uid]
 
-        dummy = f"DUM_{uid}"
+        # Index nodes: 0 = SOURCE, 1..N = candidates, N+1 = SINK
+        n = len(cands)
+        SOURCE = 0
+        SINK = n + 1
+        node_op = {i + 1: cands[i] for i in range(n)}
 
-        # ── dummy → real ──
-        for pid, etype, dur in cands:
-            key = (dummy, pid, uid)
-            seq[key] = model.new_bool_var(f"sq_{dummy}_{pid}")
-            model.add_implication(seq[key], assign[(pid, etype, uid)])
-            model.add_implication(assign[(pid, etype, uid)], seq[key])
+        arcs = []
+
+        # SOURCE -> node i
+        for i in range(1, n + 1):
+            pid, etype = node_op[i]
+            lit = model.new_bool_var(f"arc_src_{uid}_{pid}")
+            arcs.append((SOURCE, i, lit))
             ws = proc_info[pid]["workshop"]
             travel = TRANSPORT[("BASE", ws)]
-            model.add(S[pid] >= travel).only_enforce_if(seq[key])
+            model.add(
+                op_start[(pid, etype)] >= travel
+            ).only_enforce_if(lit)
+            # If this arc is taken, the unit must be assigned to this op
+            model.add_implication(lit, assign[(pid, etype, uid)])
 
-        # ── real → real ──
-        for i, (pi, ei, di) in enumerate(cands):
-            for j, (pj, ej, dj) in enumerate(cands):
+        # node i -> node j  (i != j)
+        for i in range(1, n + 1):
+            pi, ti = node_op[i]
+            for j in range(1, n + 1):
                 if i == j:
                     continue
-                key = (pi, pj, uid)
-                seq[key] = model.new_bool_var(f"sq_{pi}_{pj}_{uid}")
-                model.add_implication(seq[key], assign[(pi, ei, uid)])
-                model.add_implication(seq[key], assign[(pj, ej, uid)])
+                pj, tj = node_op[j]
+                lit = model.new_bool_var(f"arc_{uid}_{pi}_{pj}")
+                arcs.append((i, j, lit))
                 wi = proc_info[pi]["workshop"]
                 wj = proc_info[pj]["workshop"]
                 travel = TRANSPORT[(wi, wj)]
-                # Early release: use di (equipment's own processing time)
+                # Early release: use the operation's own end time
                 model.add(
-                    S[pj] >= S[pi] + di + travel
-                ).only_enforce_if(seq[key])
+                    op_start[(pj, tj)] >= op_end_expr[(pi, ti)] + travel
+                ).only_enforce_if(lit)
+                model.add_implication(lit, assign[(pi, ti, uid)])
+                model.add_implication(lit, assign[(pj, tj, uid)])
 
-        # ── ordering: exactly one direction when both assigned ──
-        for i, (pi, ei, di) in enumerate(cands):
-            for j, (pj, ej, dj) in enumerate(cands):
-                if i >= j:
-                    continue
-                fwd = seq[(pi, pj, uid)]
-                bwd = seq[(pj, pi, uid)]
-                ai = assign[(pi, ei, uid)]
-                aj = assign[(pj, ej, uid)]
-                model.add(fwd + bwd >= ai + aj - 1)
-                model.add(fwd + bwd <= 1)
+        # node i -> SINK
+        for i in range(1, n + 1):
+            pid, etype = node_op[i]
+            lit = model.new_bool_var(f"arc_{uid}_{pid}_sink")
+            arcs.append((i, SINK, lit))
+            model.add_implication(lit, assign[(pid, etype, uid)])
+
+        # SOURCE -> SINK (unit unused)
+        unused_lit = model.new_bool_var(f"arc_{uid}_unused")
+        arcs.append((SOURCE, SINK, unused_lit))
+        # If unused, no candidate may be assigned to this unit
+        for pid, etype in cands:
+            model.add_implication(unused_lit, assign[(pid, etype, uid)].Not())
+
+        # Self-loops: candidate i NOT assigned ⇔ self-loop selected
+        for i in range(1, n + 1):
+            pid, etype = node_op[i]
+            skip = assign[(pid, etype, uid)].Not()
+            arcs.append((i, i, skip))
+
+        # AddCircuit 要求闭合回路，此人工弧将设备路径 SOURCE→...→SINK 闭合为回路
+        fixed_return = model.new_bool_var(f"arc_{uid}_sink_to_source")
+        model.add(fixed_return == 1)
+        arcs.append((SINK, SOURCE, fixed_return))
+
+        model.add_circuit(arcs)
 
     # ── Makespan ──────────────────────────────────────────────────────
     Cmax = model.new_int_var(0, horizon, "Cmax")
@@ -238,6 +271,7 @@ def main():
     solver.parameters.log_search_progress = True
 
     print("Solving Question 2 (Crew 1, Workshops A-E) ...")
+    print("Asynchronous operation-level model with early equipment release.")
     print(f"Processes: {len(all_pids)}, Equipment units: {len(ALL_UNITS)}")
     print(f"Horizon: {horizon} s\n")
 
@@ -262,8 +296,8 @@ def main():
     # ── Extract schedule ──────────────────────────────────────────────
     rows = []
     for pid in all_pids:
-        s_val = solver.value(S[pid])
         for etype, dur in proc_info[pid]["equipment"].items():
+            s_val = solver.value(op_start[(pid, etype)])
             assigned_uid = None
             for uid in EQUIPMENT_UNITS[etype]:
                 if solver.value(assign[(pid, etype, uid)]):
@@ -272,6 +306,7 @@ def main():
             rows.append({
                 "equipment_id": assigned_uid,
                 "process_id": pid,
+                "etype": etype,
                 "start": s_val,
                 "end": s_val + dur,
                 "duration": dur,
@@ -323,11 +358,16 @@ def main():
     )
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("# Question 2 Solution Summary\n\n")
+        f.write("Asynchronous operation-level model with early equipment "
+                "release.\n\n")
         f.write(f"- Solver status: {status_name}\n")
         f.write(f"- Best makespan: {makespan} s ({seconds_to_hms(makespan)})\n")
         f.write(f"- Objective lower bound: {lb:.0f} s ({seconds_to_hms(int(lb))})\n")
         f.write(f"- Relative optimality gap: {gap:.2f}%\n\n")
         f.write("## Table 2\n\n")
+        f.write("Rows belonging to the same process may have different "
+                "Start Times; the process completion time is the maximum "
+                "of their End Times.\n\n")
         f.write("| No. | Equipment ID | Start | End | Duration (s) "
                 "| Process |\n")
         f.write("|-----|-------------|-------|-----|-------------|"
@@ -346,12 +386,12 @@ def main():
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# VALIDATION
+# VALIDATION — asynchronous operation-level
 # ═══════════════════════════════════════════════════════════════════════
 
 def validate_schedule(rows, proc_info, all_pids):
     print("\n" + "=" * 60)
-    print("SCHEDULE VALIDATION")
+    print("SCHEDULE VALIDATION (asynchronous operation-level)")
     print("=" * 60)
     all_pass = True
 
@@ -370,35 +410,34 @@ def validate_schedule(rows, proc_info, all_pids):
     else:
         all_pass = False
 
-    # 2. Same process → same start time
-    ok = True
+    # 2. Asynchronous starts within a process are ALLOWED — informational only
+    async_count = 0
     for pid in all_pids:
         starts = set(r["start"] for r in rows if r["process_id"] == pid)
         if len(starts) > 1:
-            print(f"[FAIL] 2. {pid} has multiple starts: {starts}")
-            ok = False
-    if ok:
-        print("[PASS] 2. All equipment in same process share start time.")
-    else:
-        all_pass = False
+            async_count += 1
+    print(f"[INFO] 2. Asynchronous operation starts allowed; "
+          f"{async_count} process(es) exhibit asynchronous starts.")
 
-    # 3. Process completion = max end time
+    # 3. Process completion = max end time over its operations
     proc_pct = {}
     for pid in all_pids:
         ends = [r["end"] for r in rows if r["process_id"] == pid]
         proc_pct[pid] = max(ends)
     print("[PASS] 3. Process completion times computed (max of end times).")
 
-    # 4. Workshop precedence
+    # 4. Workshop precedence — every row of succ starts at/after PCT[pred]
     ok = True
     for pred, succ in PRECEDENCES:
-        if proc_pct[pred] > min(r["start"] for r in rows
-                                if r["process_id"] == succ):
-            print(f"[FAIL] 4. {pred}->{succ}: pred ends {proc_pct[pred]}, "
-                  f"succ starts earlier")
-            ok = False
+        succ_rows = [r for r in rows if r["process_id"] == succ]
+        for sr in succ_rows:
+            if sr["start"] < proc_pct[pred]:
+                print(f"[FAIL] 4. {pred}->{succ}: pred PCT={proc_pct[pred]}, "
+                      f"{sr['equipment_id']} on {succ} starts {sr['start']}")
+                ok = False
     if ok:
-        print("[PASS] 4. All workshop precedence constraints satisfied.")
+        print("[PASS] 4. All workshop precedence constraints satisfied "
+              "for every successor operation.")
     else:
         all_pass = False
 
@@ -419,7 +458,7 @@ def validate_schedule(rows, proc_info, all_pids):
     else:
         all_pass = False
 
-    # 6. Transport time between consecutive ops (early release)
+    # 6. Transport time between consecutive ops uses operation end (early release)
     ok = True
     for uid, ops in unit_ops.items():
         ops_s = sorted(ops, key=lambda x: x["start"])
@@ -438,7 +477,7 @@ def validate_schedule(rows, proc_info, all_pids):
                 ok = False
     if ok:
         print("[PASS] 6. Consecutive ops respect transport time "
-              "(early release).")
+              "(based on operation end, i.e. early release).")
     else:
         all_pass = False
 
@@ -457,13 +496,12 @@ def validate_schedule(rows, proc_info, all_pids):
     else:
         all_pass = False
 
-    # 8. Early release analysis
+    # 8. Early release benefit analysis (per row vs PCT of its process)
     print("\n--- Early Release Analysis ---")
     early_count = 0
     for uid, ops in unit_ops.items():
         ops_s = sorted(ops, key=lambda x: x["start"])
-        for i in range(len(ops_s)):
-            op = ops_s[i]
+        for op in ops_s:
             pct = proc_pct[op["process_id"]]
             if op["end"] < pct:
                 benefit = pct - op["end"]

@@ -1,7 +1,7 @@
 # Mathematical Model for the Minimum-Time Overhaul Scheduling Using Crew 1 Equipment (Question 2)
 
 **Abstract**  
-This document presents a complete mathematical formulation for the cross‑workshop overhaul scheduling problem posed in Question 2 of the 2026‑MCM Problem B. Crew 1, with a fixed set of 16 mobile equipment units of five types, must execute all required processes in workshops A–E while respecting strict intra‑workshop sequences, simultaneous multi‑equipment requirements, and non‑negligible inter‑workshop transport times. The model minimises the overall makespan by exploiting **early equipment release**, i.e., the fact that a unit is free for reuse immediately after its own operation, rather than waiting for the entire process to finish. We define all sets, parameters, variables, and constraints, and provide implementation guidance for both CP‑SAT and MIP solvers. The report also specifies the exact structure of the output Table 2 and lists all modelling assumptions.
+This document presents a complete mathematical formulation for the cross‑workshop overhaul scheduling problem posed in Question 2 of the 2026‑MCM Problem B. Crew 1, with a fixed set of 16 mobile equipment units of five types, must execute all required processes in workshops A–E while respecting strict intra‑workshop sequences, simultaneous multi‑equipment requirements, and non‑negligible inter‑workshop transport times. The model is an **asynchronous operation‑level model**: when a process requires two different equipment types, the two equipment operations are independent variables that may start at different times, and the process is considered complete only when all its required equipment operations have finished. The model minimises the overall makespan by exploiting **early equipment release**, i.e., the fact that a unit is free for reuse immediately after its own operation completes, rather than waiting for the entire process to finish. We define all sets, parameters, variables, and constraints, and provide implementation guidance for both CP‑SAT and MIP solvers. The report also specifies the exact structure of the output Table 2 and lists all modelling assumptions.
 
 ## 1. Problem Interpretation for Question 2
 
@@ -9,7 +9,7 @@ Crew 1 possesses a pool of 16 equipment units comprising five different types.
 
 All equipment moves at a constant speed of 2 m s⁻¹. Transport time between workshops (and from the initial Crew 1 base) is significant and must be accounted for. Within the same workshop, movement between consecutive processes incurs no time penalty. The problem asks for the schedule that minimises the time at which the last process of every workshop is finished – the *makespan* – and for the corresponding equipment‑level work plan (Table 2).
 
-This is a **multi‑workshop flexible job‑shop scheduling problem** with shared, mobile resources and sequence‑dependent setup (transport) times. The cardinal modelling innovation is the *early equipment release* principle (Section 8), which allows a fast machine to depart for another workshop immediately after it finishes its own operation, without waiting for a slower co‑worker. This distinction dramatically reduces idle time and is the key to achieving the minimum possible makespan.
+This is a **multi‑workshop flexible job‑shop scheduling problem** with shared, mobile resources and sequence‑dependent setup (transport) times. We adopt an **asynchronous operation‑level model**: when a process requires two equipment types, each equipment operation has its own start variable and the two operations may begin at different times. The process is considered complete only after all its required equipment operations finish. The cardinal modelling innovation is the *early equipment release* principle (Section 8), which allows a fast machine to depart for another workshop immediately after it finishes its own operation, without waiting for a slower co‑worker. This distinction dramatically reduces idle time and is the key to achieving the minimum possible makespan.
 
 ## 2. Extracted Data Structure from the Attachment
 
@@ -169,8 +169,8 @@ Within a workshop, transport time is zero by assumption.
 
 ## 5. Decision Variables
 
-* **Process start time**  
-  \( S_j \in \mathbb{Z}_{\ge 0} \) for each \( j \in J \). All equipment units assigned to process \( j \) begin their work simultaneously at \( S_j \) (assumption; see Section 11).
+* **Operation start time** (asynchronous)  
+  \( s_{j,t} \in \mathbb{Z}_{\ge 0} \) for each process \( j \in J \) and each required equipment type \( t \in E_j \). Each equipment operation has its own start variable; operations of the same process may begin at different times. The process completion time \( PCT_j \) (below) is the maximum over its operation completion times.
 
 * **Process completion time**  
   \( PCT_j \in \mathbb{R}_{\ge 0} \) (or integer) for \( j \in J \). Defined by constraints to equal the maximum of the operation completion times of the required equipment.
@@ -188,7 +188,7 @@ Within a workshop, transport time is zero by assumption.
 * **Makespan**  
   \( C_{\max} \ge 0 \), integer.
 
-For the dummy processes \( 0_k \), we fix \( S_{0_k}=0 \), \( y_{0_k, t(k), k}=1 \), and treat them as any other process in the sequencing constraints. This elegantly captures the initial transport from the Crew 1 base.
+In the implementation we replace the per‑unit dummy nodes by a **path‑style direct‑successor arc model** (one source/sink pair per equipment unit) that more cleanly captures the initial transport from the Crew 1 base; see Section 9. Travel time is applied only to consecutive operations along the chosen path of each unit, not to non‑consecutive pairs.
 
 ## 6. Objective Function
 
@@ -201,13 +201,13 @@ subject to the makespan definition (Section 7.i).
 
 ### (a) Intra‑workshop process precedence
 
-For every immediate successor pair \( i \rightarrow j \) within a workshop (including the repeated blocks of Workshop C):
+For every immediate successor pair \( i \rightarrow j \) within a workshop (including the repeated blocks of Workshop C), every operation of \( j \) must wait for the predecessor to complete:
 
 \[
-S_j \ge PCT_i .
+s_{j,t} \ge PCT_i \qquad \forall\, t \in E_j .
 \]
 
-Examples: \( S_{A2} \ge PCT_{A1} \); \( S_{C3_2} \ge PCT_{C5_1} \); etc.
+Examples: \( s_{A2,\,\text{HPM}} \ge PCT_{A1} \) and \( s_{A2,\,\text{ICM}} \ge PCT_{A1} \) — the two operations of A2 may begin asynchronously but both must start after A1 is fully complete.
 
 ### (b) Equipment assignment
 
@@ -221,41 +221,41 @@ Thus exactly one unit of type \( t \) is allocated to process \( j \). For types
 
 ### (c) Operation start and completion times
 
-When a unit \( k \) of type \( t \) is assigned to a real process \( j \) (\( y_{j,t,k}=1 \)), its operation occupies the interval
+Every operation has its own start variable. When a unit \( k \) of type \( t \) is assigned to a real process \( j \) (\( y_{j,t,k}=1 \)), the operation occupies the interval
 \[
-[\,S_j,\; S_j + p_{j,t}\,].
+[\,s_{j,t},\; s_{j,t} + p_{j,t}\,].
 \]
-The operation completion time of unit \( k \) on process \( j \) is
+The operation completion time is
 
 \[
-OCT_{j,k} = S_j + p_{j,t}, \qquad \text{if } y_{j,t,k}=1.
+e_{j,t} = s_{j,t} + p_{j,t}.
 \]
 
-(No separate variable is required; this expression is used in later constraints.)
+This is a linear expression in the decision variable \( s_{j,t} \); no auxiliary variable is required. The release time of the assigned unit on this operation equals \( e_{j,t} \).
 
 ### (d) Process completion as maximum of required equipment operations
 
-For each real process \( j \) and for each required type \( t \in E_j \):
+For each real process \( j \) and each required type \( t \in E_j \):
 
 \[
-PCT_j \ge S_j + p_{j,t}. \tag{2}
+PCT_j \ge e_{j,t} = s_{j,t} + p_{j,t}. \tag{2}
 \]
 
 Because the objective minimises \( C_{\max} \) and, via the terminal constraints, forces \( PCT_j \) downward, at optimality
 \[
-PCT_j = \max_{t \in E_j} \; (S_j + p_{j,t}),
+PCT_j = \max_{t \in E_j} \; e_{j,t},
 \]
-i.e. the process finishes when the slower of the required equipment types completes its share.
+i.e. the process finishes when the latest of its required equipment operations completes. Because \( s_{j,t} \) are independent decision variables, different operations of the same process may begin at different times.
 
 ### (e) Early equipment release
 
 The release time of unit \( k \) from process \( j \) is defined as its own operation completion:
 
 \[
-R_{j,k} = OCT_{j,k} = S_j + p_{j,t} \qquad (\text{if } y_{j,t,k}=1).
+R_{j,k} = e_{j,t} = s_{j,t} + p_{j,t} \qquad (\text{if } y_{j,t,k}=1).
 \]
 
-A unit becomes available for a new assignment at \( R_{j,k} \), **not** at \( PCT_j \). This principle is the cornerstone of the model and is implemented in the non‑overlap constraints (f).
+A unit becomes available for a new assignment at \( R_{j,k} = e_{j,t} \), **not** at \( PCT_j \). Because \( s_{j,t} \) is asynchronous with the start of any other operation of process \( j \), the unit's release time is decoupled from the slowest co‑worker. This principle is the cornerstone of the model and is implemented in the non‑overlap constraints (f).
 
 ### (f) Equipment non‑overlap with transport (early‑release disjunctive constraints)
 
@@ -274,24 +274,24 @@ Thus if both \( i \) and \( j \) are assigned to the same unit \( k \), exactly 
 
 **Temporal disjunctive constraints (big‑M):**
 
-For each unit \( k \), for all \( i \neq j \in J'_t \):
+For each unit \( k \) of type \( t = t(k) \) and for all \( i \neq j \in J'_t \):
 
 \[
-S_j \ge S_i + p_{i,t(k)} + \tau_{w(i),\, w(j)} \;-\; M\,\bigl(1 - z_{i,j,k}\bigr), \tag{5}
+s_{j,t} \ge e_{i,t} + \tau_{w(i),\, w(j)} \;-\; M\,\bigl(1 - z_{i,j,k}\bigr), \tag{5}
 \]
 \[
-S_i \ge S_j + p_{j,t(k)} + \tau_{w(j),\, w(i)} \;-\; M\,\bigl(1 - z_{j,i,k}\bigr). \tag{6}
+s_{i,t} \ge e_{j,t} + \tau_{w(j),\, w(i)} \;-\; M\,\bigl(1 - z_{j,i,k}\bigr), \tag{6}
 \]
 
-When \( z_{i,j,k}=1 \), (5) forces the start of \( j \) to be at least the finish of \( k \) on \( i \) plus the time to travel from the workshop of \( i \) to the workshop of \( j \). The symmetric case is handled by (6). The use of \( S_i + p_{i,t(k)} \) (the unit’s own operation completion) instead of \( PCT_i \) embodies the early‑release mechanism.
+where \( e_{i,t} = s_{i,t} + p_{i,t} \). When \( z_{i,j,k}=1 \), (5) forces operation \( (j,t) \) to start no earlier than the release of unit \( k \) from operation \( (i,t) \) plus the travel time from workshop \( w(i) \) to workshop \( w(j) \). The use of \( e_{i,t} \) (the unit's own operation completion) instead of \( PCT_i \) embodies the early‑release mechanism.
 
-For dummy processes \( 0_k \), we have \( S_{0_k}=0 \), \( p_{0_k,t(k)}=0 \), and \( w(0_k)=0 \) (Crew 1 base). Constraint (5) with \( i = 0_k \) therefore becomes
+In our preferred implementation (Section 9) the dummy‑process construct is replaced by a path‑style direct‑successor arc model with explicit SOURCE and SINK nodes per unit. The arc \( \text{SOURCE} \rightarrow (j,t) \) carries the timing constraint
 
 \[
-S_j \ge \tau_{0,\, w(j)} \;-\; M\,\bigl(1 - z_{0_k,j,k}\bigr),
+s_{j,t} \ge \tau_{0,\, w(j)},
 \]
 
-which ensures that the first real job of unit \( k \) cannot start until the unit has travelled from the base to the required workshop.
+ensuring that the first real operation of unit \( k \) cannot start until the unit has travelled from the base. This avoids the big‑M weakness of dummy processes and prevents travel time from being applied to non‑consecutive operations on the same unit.
 
 ### (g) Inter‑workshop transportation
 
@@ -299,7 +299,7 @@ The transport time between workshops is directly embedded in the disjunctive con
 
 ### (h) Initial movement from Crew 1 base
 
-The use of dummy processes (Section 3 and constraints above) forces every unit to start its first real operation after the necessary travel from the base. Because \( S_{0_k}=0 \) and the unit must finish the dummy “job” (cost 0) before any real job, (5) gives exactly \( S_j \ge \tau_{0,w(j)} \) when the dummy is sequenced immediately before \( j \) on that unit.
+The path‑style arc model (Section 9) places a SOURCE node per unit at the Crew 1 base. Whichever real operation \( (j,t) \) is chosen as the first node on unit \( k \) must satisfy \( s_{j,t} \ge \tau_{0,w(j)} \). If a unit is not used at all, the SOURCE node connects directly to SINK and no timing constraint is imposed.
 
 ### (i) Makespan definition
 
@@ -326,36 +326,31 @@ The early‑release principle therefore decouples the individual units’ availa
 
 The model is designed to be directly implementable in both CP‑SAT and MIP solvers. Below we sketch an implementation strategy using Google OR‑Tools CP‑SAT, which often excels for scheduling problems of this size.
 
-**Key elements:**
+**Key elements (asynchronous operation‑level model):**
 
-1. **Process start variables** – Create an integer variable \( S_j \) for each real process \( j \), with domain \( [0, \text{horizon}] \).
+1. **Operation start variables** – For every process \( j \) and every required type \( t \in E_j \), create an integer variable `op_start[j,t]` with domain \( [0, \text{horizon}] \). The corresponding operation end is the linear expression `op_start[j,t] + p_{j,t}` — no extra variable is needed. Different operations of the same process are independent.
 
-2. **Assignment literals and optional intervals**  
-   For each process \( j \), required type \( t \), and unit \( k \in K_t \), create a Boolean literal `assign[j,t,k]`.  
-   Create an optional interval variable `op_interval[j,t,k]` with fixed duration \( p_{j,t} \), start expression `S_j`, and presence literal `assign[j,t,k]`.
+2. **Assignment literals**  
+   For each process \( j \), required type \( t \), and unit \( k \in K_t \), create a Boolean literal `assign[j,t,k]`. Enforce `model.Add(sum(assign[j,t,k] for k in K_t) == 1)` for every required `(j,t)`.
 
-3. **Assignment constraints**  
-   For each \( j \) and \( t \), enforce `model.Add(sum(assign[j,t,k] for k in K_t) == 1)`.
+3. **Process completion and intra‑workshop precedence**  
+   For each process \( j \), define `PCT_j` and enforce `model.AddMaxEquality(PCT_j, [op_start[j,t] + p_{j,t} for t in E_j])`. For each precedence pair \( i \rightarrow j \) and every \( t \in E_j \), add `model.Add(op_start[j,t] >= PCT_i)`. Note: every operation of the successor must wait for the predecessor's *full* completion; only the within‑process equipment operations are asynchronous.
 
-4. **Unit non‑overlap and transport**  
-   For each unit \( k \) of type \( t \), build a list of the interval variables `op_interval[j,t,k]` (including dummy intervals at time 0 with zero length).  
-   One can optionally add a `NoOverlap` constraint on these intervals for stronger propagation, but the transport gaps require explicit sequencing.  
-   Introduce a Boolean literal `seq[i,j,k]` for every ordered pair of distinct processes that can be served by \( k \). Link them with constraints analogous to (3)–(4):
-   - `model.AddImplication(seq[i,j,k], assign[i,t,k])`, etc.
-   - `model.AddBoolOr([seq[i,j,k], seq[j,i,k], Not(assign[i,t,k]), Not(assign[j,t,k])])`.
-   - `model.AddBoolOr([seq[i,j,k], seq[j,i,k]]).OnlyEnforceIf([assign[i,t,k], assign[j,t,k]])` (or use `model.Add(sum([seq[i,j,k], seq[j,i,k]]) == 1).OnlyEnforceIf([assign[i,t,k], assign[j,t,k]])`).
+4. **Path‑style direct‑successor arc model per equipment unit (preferred)**  
+   For each unit \( k \) of type \( t \), build a directed graph whose nodes are SOURCE, the candidate operations \( \{(j,t) : t \in E_j\} \), and SINK. Use CP‑SAT's `AddCircuit` constraint with the following arcs (each carrying a Boolean literal):
+   - `SOURCE → (j,t)` for every candidate; `OnlyEnforceIf` imposes `op_start[j,t] >= τ(BASE, w(j))`. The arc literal also implies `assign[j,t,k]`.
+   - `(i,t) → (j,t)` for every ordered pair of distinct candidates; the literal implies both `assign[i,t,k]` and `assign[j,t,k]`, and `OnlyEnforceIf` imposes `op_start[j,t] >= op_start[i,t] + p_{i,t} + τ(w(i), w(j))`. This is the early‑release transport rule applied to *consecutive* operations on the same unit only.
+   - `(j,t) → SINK` for every candidate; the literal implies `assign[j,t,k]`. No timing constraint.
+   - `SOURCE → SINK` (unit unused). The literal implies `Not(assign[j,t,k])` for every candidate.
+   - **Self‑loop** `(j,t) → (j,t)` whose literal equals `Not(assign[j,t,k])`. Self‑loops let `AddCircuit` skip candidates that are not assigned to this unit.
 
-   Then for each `seq[i,j,k]` literal, use `model.Add(S_j >= S_i + p_{i,t} + travel_time).OnlyEnforceIf(seq[i,j,k])`. This captures the early‑release requirement.
+   `model.AddCircuit(arcs)` then enforces flow conservation (every assigned candidate has exactly one in‑arc and one out‑arc among the chosen arcs, while unassigned candidates use their self‑loop). Travel time is therefore applied only to the directly chosen successor of each operation, never to non‑consecutive pairs — which is the correct early‑release rule.
 
-5. **Process completion and precedence**  
-   For each real process \( j \), add a variable `PCT_j` (or use `model.NewIntVar`). Constrain `model.Add(PCT_j >= S_j + p_{j,t})` for all \( t \in E_j \).  
-   For each precedence pair \( i \rightarrow j \), add `model.Add(S_j >= PCT_i)`.
-
-6. **Makespan**  
-   Create integer variable `C_max`, add `model.Add(C_max >= PCT_j)` for terminal processes, and set `model.Minimize(C_max)`.
+5. **Makespan**  
+   Create `C_max`, add `model.Add(C_max >= PCT_j)` for every terminal process, and set `model.Minimize(C_max)`.
 
 **MIP alternative:**  
-The same binary variables and big‑M constraints (3)–(6) can be given to a MIP solver. The MIP will contain approximately 138 assignment binaries, about 1200 sequencing binaries, and a few thousand constraints – well within the capacity of commercial solvers. However, the LP relaxation may be weak due to the big‑M values; supplying a strong lower bound (Section 8 of the original ten‑angle analysis gives a machine‑based bound of ~136 450 s for the HPM) can help.
+The same operation‑level variables \( s_{j,t} \) and big‑M constraints (3)–(6) can be given to a MIP solver. The model contains approximately 138 assignment binaries, about 1200 sequencing binaries, and a few thousand constraints – well within the capacity of commercial solvers. The LP relaxation may be weak due to the big‑M values; supplying a strong lower bound (the machine‑based bound of ~136 450 s for the HPM) can help. Without `AddCircuit` support, the MIP must either include all pairwise big‑M disjunctions or use a single‑commodity flow encoding to avoid applying transport time to non‑consecutive operations.
 
 **Trade‑offs:**  
 - CP‑SAT’s native interval reasoning often prunes the search space more effectively.  
@@ -376,7 +371,7 @@ Table 2 presents the optimal schedule at the equipment operation level. Its fo
 | **Continuous Operation Duration (s)** | The processing time \( p_{j,t} \) (a constant, integer). |
 | **Corresponding Process ID** | The label of the process (e.g., `A1`, `C3‑2`). For Workshop C rounds, append the round number (e.g., `C3‑1`). |
 
-- For processes requiring two equipment types, two separate rows appear (one per unit), sharing the same Start Time but possibly different End Times.
+- For processes requiring two equipment types, two separate rows appear (one per unit). In the asynchronous operation‑level model these rows **may have different Start Times** and different End Times; the process completion time is the maximum of their End Times.
 - Transport times are **not** shown as separate rows; they appear as idle gaps between consecutive rows of the same unit.
 
 ### 10.2 Interpretation of gaps
@@ -392,10 +387,10 @@ where \( w_{\text{prev}} \) and \( w_{\text{next}} \) are the workshops of the t
 A complete Table 2 can be cross‑checked against the model constraints by verifying:
 
 1. **Compatibility** – Each equipment ID belongs to a type required by the process.
-2. **Unique assignment and common start** – For each process instance, exactly one unit of each required type appears, and all rows with the same Process ID have identical Start Time.
-3. **Intra‑workshop precedence** – Let \( PCT_P = \max\{ \text{End Time of rows for process } P\} \). For consecutive processes \( P \rightarrow Q \), \( S_Q \ge PCT_P \).
+2. **Unique assignment (asynchronous starts allowed)** – For each process instance, exactly one unit of each required type appears. Rows belonging to the same Process ID **may have different Start Times**; this is intended in the asynchronous operation‑level model.
+3. **Intra‑workshop precedence** – Let \( PCT_P = \max\{ \text{End Time of rows for process } P\} \). For consecutive processes \( P \rightarrow Q \), **every row** of \( Q \) must satisfy \( \text{Start Time} \ge PCT_P \).
 4. **Unit non‑overlap** – For each unit, sort its rows by Start Time; ensure End Time₍ᵢ₎ ≤ Start Time₍ᵢ₊₁₎.
-5. **Transport gaps** – For consecutive rows of the same unit, the difference must be at least the transport time between the corresponding workshops (or from base for the first row).
+5. **Transport gaps with early release** – For consecutive rows of the same unit, the difference must be at least the transport time between the corresponding workshops (or from base for the first row). The release endpoint is the row's End Time, **not** the process completion time.
 6. **Coverage** – All process instances (A1,…,C5‑3,…) are listed exactly as required, with the correct number of units.
 
 If all checks pass, the table represents a feasible schedule.
@@ -406,9 +401,9 @@ The following assumptions underpin the model and are consistent with the problem
 
 1. **Initial position** – At \( t = 00:00:00 \) all equipment units are at the Crew 1 base. The first operation may only begin after travel from the base.
 2. **Workshop C workload** – The workload given for C3, C4, C5 is **per round**, as indicated by the column header. The three rounds each require the full amount.
-3. **Asynchronous workshop starts** – The first process of different workshops may start at different times; there is no global synchronisation.
+3. **Asynchronous starts (workshop and within‑process)** – Different workshops have no global start synchronisation; additionally, the two equipment operations of a single process may begin at different times. Synchronisation across operations of the same process is **not** required.
 4. **Non‑preemption** – Once an equipment unit begins an operation, it works continuously until the operation is finished. No splitting of workloads.
-5. **One unit per required type, indivisible workload** – A process that needs a given equipment type is served by exactly one unit of that type, and that unit must complete the entire workload. Multiple identical units cannot collaborate on the same process.
+5. **One unit per required type, indivisible workload** – A process that needs a given equipment type is served by exactly one unit of that type, and that unit must complete the entire workload. Multiple identical units cannot collaborate on the same process. When a process requires two different types, the two equipment operations are independent and may start asynchronously (see assumption 3).
 6. **Equipment type coverage** – Crew 1 possesses all types required by the five workshops; the type‑to‑process mapping is covered.
 7. **Early equipment release** – As argued in Section 8, this is a valid interpretation; no problem rule forbids a unit from leaving a workshop before its co‑worker finishes.
 8. **Transport model** – Equipment moves independently at constant speed 2 m s⁻¹; no congestion, no loading/calibration delays beyond the transport time; intra‑workshop relocation is instantaneous.
