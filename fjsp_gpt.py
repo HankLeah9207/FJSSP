@@ -1,4 +1,5 @@
 import itertools
+import argparse
 import math
 import os
 import random
@@ -30,6 +31,11 @@ plt.rcParams["axes.unicode_minus"] = False
 RANDOM_SEED = 2026
 BUDGET = 500000
 WORKSHOPS = list("ABCDE")
+DEFAULT_MAX_TOTAL_NEW_MACHINES = 10
+DEFAULT_MAX_PER_TYPE_TEAM = 4
+EXPAND_C_REPEATED_OPS = True
+C_REPEATED_BASE_OPS = {"C3", "C4", "C5"}
+C_REPEATED_COUNT = 3
 
 DEVICE_TYPES = [
     "Automated Conveying Arm",
@@ -154,23 +160,56 @@ def canonical_type_from_text(text):
     raise ValueError(f"无法识别设备类型: {text}")
 
 
-def parse_efficiency(text):
+def convert_efficiency_to_per_second(value: float, raw_text: str) -> tuple[float, str]:
+    """Convert a parsed efficiency value to units per second using the unit text."""
+    if value <= 0:
+        raise ValueError(f"效率必须为正数: {value}")
+    text = str(raw_text).strip().lower()
+    text = text.replace("／", "/")
+    hour_markers = ["per hour", "每小时", "/h", "/hr", "m³/h", "m3/h", "kg/h", "m/h"]
+    second_markers = ["per second", "每秒", "/s", "m³/s", "m3/s", "kg/s", "m/s"]
+    has_hour = any(x in text for x in hour_markers) or bool(re.search(r"(?<![a-z])h(?![a-z])", text))
+    has_second = any(x in text for x in second_markers) or bool(re.search(r"(?<![a-z])s(?![a-z])", text))
+    if has_hour and not has_second:
+        return value / 3600.0, "per hour; divided by 3600"
+    if has_second and not has_hour:
+        return value, "per second; unchanged"
+    if has_hour and has_second:
+        return value / 3600.0, "ambiguous unit text contains hour and second markers; assumed per hour"
+    return value / 3600.0, "unit not explicit; assumed per hour"
+
+
+def parse_efficiency(text, return_notes=False, process_id=None):
+    """Parse all equipment efficiencies in one cell and optionally return unit notes."""
     text = str(text)
     compact = normalize_type_name(text)
     result = {}
+    notes = []
     for en in DEVICE_TYPES:
         labels = [re.escape(en), re.escape(TYPE_CN[en])]
         for label in labels:
             # 兼容 “设备名 200 m³/h” 和 “设备名：200” 两类写法。
-            m = re.search(label + r"\s*[:：]?\s*([\d.]+)", compact)
+            m = re.search(label + r"\s*[:：]?\s*([\d.]+)\s*([^,，;；|]*)", compact)
             if m:
-                value_per_hour = float(m.group(1))
-                if value_per_hour <= 0:
-                    raise ValueError(f"设备 {en} 的效率必须为正数: {text}")
-                result[en] = value_per_hour / 3600.0
+                value = float(m.group(1))
+                unit_fragment = m.group(0)
+                eff_per_second, unit_note = convert_efficiency_to_per_second(value, unit_fragment)
+                result[en] = eff_per_second
+                notes.append(
+                    {
+                        "工序编号": process_id or "",
+                        "设备类型": TYPE_CN.get(en, en),
+                        "原始效率文本": text,
+                        "解析数值": value,
+                        "单位判断": unit_note,
+                        "转换后每秒效率": eff_per_second,
+                    }
+                )
                 break
     if not result:
         raise ValueError(f"无法解析作业效率: {text}")
+    if return_notes:
+        return result, notes
     return result
 
 
@@ -211,6 +250,17 @@ def find_column(df, candidates, table_name):
     raise KeyError(f"{table_name} 缺少必要列 {candidates}；实际列名: {list(df.columns)}")
 
 
+def try_find_column(df, candidates):
+    exact = {str(c).strip(): c for c in df.columns}
+    lower = {str(c).strip().lower(): c for c in df.columns}
+    for name in candidates:
+        if name in exact:
+            return exact[name]
+        if name.lower() in lower:
+            return lower[name.lower()]
+    return None
+
+
 def load_data(file_path):
     xl = pd.ExcelFile(file_path)
     return {s: pd.read_excel(file_path, sheet_name=s) for s in xl.sheet_names}
@@ -225,7 +275,80 @@ def add_distance(distance, a, b, d):
     distance[(b, a)] = float(d)
 
 
-def preprocess_data(dfs):
+def parse_distance_table(df_dist):
+    """Parse distance data from either an edge-list table or a square/rectangular matrix."""
+    warnings = []
+    distance = {}
+    origin_col = try_find_column(df_dist, DISTANCE_COLUMN_CANDIDATES["origin"])
+    dest_col = try_find_column(df_dist, DISTANCE_COLUMN_CANDIDATES["destination"])
+    distance_col = try_find_column(df_dist, DISTANCE_COLUMN_CANDIDATES["distance"])
+    expected_locations = {"Crew 1", "Crew 2", *WORKSHOPS}
+
+    if origin_col is not None and dest_col is not None and distance_col is not None:
+        for _, row in df_dist.iterrows():
+            if pd.isna(row[origin_col]) or pd.isna(row[dest_col]):
+                continue
+            d = parse_number(row[distance_col])
+            add_distance(distance, row[origin_col], row[dest_col], d)
+        present = {x for pair in distance for x in pair}
+        missing = sorted(expected_locations - present)
+        if missing:
+            warnings.append(f"WARNING: edge-list 距离表缺少部分位置: {missing}")
+        for x in ["Crew 1", "Crew 2", "班组1", "班组2"] + WORKSHOPS:
+            add_distance(distance, x, x, 0.0)
+        return distance, "edge-list", warnings
+
+    if df_dist.shape[1] < 2:
+        raise KeyError("车间距离表既不是 edge-list 三列格式，也不是矩阵格式")
+
+    origin_col = df_dist.columns[0]
+    destination_cols = list(df_dist.columns[1:])
+    explicit = {}
+    origins, destinations = set(), set()
+    for _, row in df_dist.iterrows():
+        if pd.isna(row[origin_col]):
+            continue
+        origin = normalize_location(row[origin_col])
+        origins.add(origin)
+        for col in destination_cols:
+            destination = normalize_location(col)
+            destinations.add(destination)
+            if pd.isna(row[col]):
+                continue
+            value = parse_number(row[col])
+            if value is None:
+                continue
+            add_distance(distance, origin, destination, value)
+            explicit[(origin, destination)] = float(value)
+
+    seen_asymmetric_pairs = set()
+    for (a, b), value in explicit.items():
+        reverse = explicit.get((b, a))
+        pair_key = tuple(sorted([a, b]))
+        if (
+            reverse is not None
+            and pair_key not in seen_asymmetric_pairs
+            and not math.isclose(value, reverse, rel_tol=1e-9, abs_tol=1e-9)
+        ):
+            warnings.append(f"WARNING: 距离矩阵非对称，保留显式值 {a}->{b}={value}, {b}->{a}={reverse}")
+            seen_asymmetric_pairs.add(pair_key)
+        distance[(a, b)] = value
+
+    present = origins | destinations
+    missing = sorted(expected_locations - present)
+    if missing:
+        warnings.append(f"WARNING: matrix 距离表缺少部分位置: {missing}")
+    for x in ["Crew 1", "Crew 2", "班组1", "班组2"] + WORKSHOPS:
+        add_distance(distance, x, x, 0.0)
+    return distance, "matrix", sorted(set(warnings))
+
+
+def preprocess_data(
+    dfs,
+    expand_c_repeated_ops: bool = EXPAND_C_REPEATED_OPS,
+    c_repeated_base_ops: set[str] = C_REPEATED_BASE_OPS,
+    c_repeated_count: int = C_REPEATED_COUNT,
+):
     process_sheet = find_sheet_name(dfs, PROCESS_SHEET_CANDIDATES)
     crew_sheet = find_sheet_name(dfs, CREW_SHEET_CANDIDATES)
     distance_sheet = find_sheet_name(dfs, DISTANCE_SHEET_CANDIDATES)
@@ -240,12 +363,19 @@ def preprocess_data(dfs):
 
     pcols = {k: find_column(pf, v, "工序流程表") for k, v in PROCESS_COLUMN_CANDIDATES.items()}
     ccols = {k: find_column(cf, v, "班组配置表") for k, v in CREW_COLUMN_CANDIDATES.items()}
-    dcols = {k: find_column(df_dist, v, "车间距离表") for k, v in DISTANCE_COLUMN_CANDIDATES.items()}
+    distance, distance_format, distance_warnings = parse_distance_table(df_dist)
 
     pf[pcols["workshop"]] = pf[pcols["workshop"]].ffill()
     operations, workshop_ops = {}, defaultdict(list)
     expansion_rows = []
-    warnings = []
+    warnings = list(distance_warnings)
+    efficiency_unit_notes = []
+
+    warnings.append(
+        "C工序展开配置: "
+        f"enabled={expand_c_repeated_ops}, base_ops={sorted(c_repeated_base_ops)}, repeat={c_repeated_count}. "
+        "该规则基于对附件 C3-C5 重复工程段的解释，用户应核对原始题目数据。"
+    )
 
     for _, row in pf.iterrows():
         if pd.isna(row[pcols["process_id"]]):
@@ -261,15 +391,14 @@ def preprocess_data(dfs):
         workload = parse_number(row[pcols["workload"]])
         if workload is None or workload <= 0:
             raise ValueError(f"工序 {base} 的工程量必须为正数: {row[pcols['workload']]}")
-        eff = parse_efficiency(row[pcols["efficiency"]])
+        eff, eff_notes = parse_efficiency(row[pcols["efficiency"]], return_notes=True, process_id=base)
+        efficiency_unit_notes.extend(eff_notes)
 
-        # C3、C4、C5 在附件中对应重复工程段/重复作业记录。这里将其展开为
-        # C3-1/C4-1/C5-1, C3-2/C4-2/C5-2, C3-3/C4-3/C5-3 三轮内部工序，
-        # 题目回填表仍显示原始工序编号，完整排程表保留内部展开编号。
-        repeat = 3 if base in {"C3", "C4", "C5"} else 1
+        # C3/C4/C5 的展开规则被参数化，便于在不同题目解释下关闭或调整。
+        repeat = c_repeated_count if expand_c_repeated_ops and base in c_repeated_base_ops else 1
         if repeat > 1:
             warnings.append(
-                "WARNING: C3-C5 are internally expanded into repeated sub-operations. "
+                f"WARNING: {base} is internally expanded into {repeat} repeated sub-operations. "
                 "Please verify this interpretation against the original process table."
             )
         for r in range(1, repeat + 1):
@@ -319,15 +448,6 @@ def preprocess_data(dfs):
             for mid in split_machine_ids(row[ccols[f"crew{team}"]]):
                 machines[mid] = Machine(mid, team, t, float(speed), int(price), f"Crew {team}")
 
-    distance = {}
-    for _, row in df_dist.iterrows():
-        if pd.isna(row[dcols["origin"]]) or pd.isna(row[dcols["destination"]]):
-            continue
-        d = parse_number(row[dcols["distance"]])
-        add_distance(distance, row[dcols["origin"]], row[dcols["destination"]], d)
-    for x in ["Crew 1", "Crew 2", "班组1", "班组2"] + WORKSHOPS:
-        add_distance(distance, x, x, 0.0)
-
     errors = []
     for op in operations.values():
         for t in op.required_types:
@@ -337,7 +457,21 @@ def preprocess_data(dfs):
         raise ValueError("数据可行性错误:\n" + "\n".join(errors))
 
     expansion_df = pd.DataFrame(expansion_rows)
-    return operations, dict(workshop_ops), machines, distance, prices, expansion_df, sorted(set(warnings))
+    efficiency_notes_df = pd.DataFrame(
+        efficiency_unit_notes,
+        columns=["工序编号", "设备类型", "原始效率文本", "解析数值", "单位判断", "转换后每秒效率"],
+    )
+    return (
+        operations,
+        dict(workshop_ops),
+        machines,
+        distance,
+        prices,
+        expansion_df,
+        sorted(set(warnings)),
+        distance_format,
+        efficiency_notes_df,
+    )
 
 
 def calc_processing_time(operation: Operation, machine: Machine) -> int:
@@ -421,8 +555,22 @@ def score_assignment(trial, rule):
     return (max_end, sum_end, sum(x["transport"] for x in trial))
 
 
-def choose_assignment(op, machines, distance, m_avail, m_loc, pred_done, machine_rule="earliest_completion_time"):
-    best = None
+def choose_assignment(
+    op,
+    machines,
+    distance,
+    m_avail,
+    m_loc,
+    pred_done,
+    machine_rule="earliest_completion_time",
+    rng=None,
+    top_k=1,
+    randomize_top_k=False,
+    temperature=1.0,
+):
+    """Choose a feasible machine combination, optionally sampling among top-k scored choices."""
+    rng = rng or random.Random(RANDOM_SEED)
+    scored_trials = []
     for combo in itertools.product(*candidate_machine_lists(op, machines)):
         if len({m.machine_id for m in combo}) < len(combo):
             continue
@@ -441,12 +589,20 @@ def choose_assignment(op, machines, distance, m_avail, m_loc, pred_done, machine
                     "available": int(m_avail[m.machine_id]),
                 }
             )
-        score = score_assignment(trial, machine_rule)
-        if best is None or score < best[0]:
-            best = (score, trial)
-    if best is None:
+        scored_trials.append((score_assignment(trial, machine_rule), trial))
+    if not scored_trials:
         raise RuntimeError(f"工序 {op.expanded_op_id} 没有可行设备组合")
-    return best[1]
+    scored_trials.sort(key=lambda x: x[0])
+    if not randomize_top_k or top_k <= 1:
+        return scored_trials[0][1]
+
+    pool = scored_trials[: max(1, min(int(top_k), len(scored_trials)))]
+    scalar_scores = [sum((10**-i) * float(part) for i, part in enumerate(score)) for score, _ in pool]
+    best_score, worst_score = min(scalar_scores), max(scalar_scores)
+    span = max(1.0, worst_score - best_score)
+    temp = max(float(temperature), 1e-6)
+    weights = [math.exp(-((s - best_score) / span) / temp) for s in scalar_scores]
+    return rng.choices([trial for _, trial in pool], weights=weights, k=1)[0]
 
 
 def records_from_trial(op, trial):
@@ -528,7 +684,12 @@ def schedule_by_order(
     priority_order=None,
     machine_rule="earliest_completion_time",
     problem_name=None,
+    rng=None,
+    assignment_top_k=1,
+    randomize_assignment_top_k=False,
+    assignment_temperature=1.0,
 ):
+    rng = rng or random.Random(RANDOM_SEED)
     if allowed_teams is not None:
         machines = {k: v for k, v in machines.items() if v.team in set(allowed_teams)}
     if selected_workshops is not None:
@@ -553,7 +714,19 @@ def schedule_by_order(
             if pred_done is None:
                 continue
             op = operations[op_id]
-            trial = choose_assignment(op, machines, distance, m_avail, m_loc, pred_done, machine_rule)
+            trial = choose_assignment(
+                op,
+                machines,
+                distance,
+                m_avail,
+                m_loc,
+                pred_done,
+                machine_rule,
+                rng=rng,
+                top_k=assignment_top_k,
+                randomize_top_k=randomize_assignment_top_k,
+                temperature=assignment_temperature,
+            )
             for x in trial:
                 m = x["machine"]
                 m_avail[m.machine_id] = x["end"]
@@ -577,6 +750,9 @@ def dispatch_schedule(
     machine_rule="earliest_completion_time",
     rng=None,
     problem_name=None,
+    assignment_top_k=1,
+    randomize_assignment_top_k=False,
+    assignment_temperature=1.0,
 ):
     rng = rng or random.Random(RANDOM_SEED)
     if allowed_teams is not None:
@@ -599,7 +775,19 @@ def dispatch_schedule(
         scored = []
         for op_id, pred_done in eligible:
             op = operations[op_id]
-            trial = choose_assignment(op, machines, distance, m_avail, m_loc, pred_done, machine_rule)
+            trial = choose_assignment(
+                op,
+                machines,
+                distance,
+                m_avail,
+                m_loc,
+                pred_done,
+                machine_rule,
+                rng=rng,
+                top_k=assignment_top_k,
+                randomize_top_k=randomize_assignment_top_k,
+                temperature=assignment_temperature,
+            )
             if operation_rule == "alphabetical":
                 score = (op.workshop, op.order)
             elif operation_rule in {"shortest_processing_time", "spt"}:
@@ -720,6 +908,8 @@ def optimize_schedule(
     random_seed=RANDOM_SEED,
 ):
     rng = random.Random(random_seed)
+    randomized_assignment_top_k = 3
+    randomized_assignment_temperature = 0.5
     strategies = strategies or [
         "round_robin",
         "alphabetical",
@@ -739,8 +929,18 @@ def optimize_schedule(
             )
         else:
             order = build_topological_order(operations, workshop_ops, mode=strategy, rng=rng, machines=metric_machines)
+            randomize_assignment = strategy in {"random", "random_weighted"}
             df, cmax = schedule_by_order(
-                operations, workshop_ops, machines, distance, allowed_teams=allowed_teams, priority_order=order
+                operations,
+                workshop_ops,
+                machines,
+                distance,
+                allowed_teams=allowed_teams,
+                priority_order=order,
+                rng=rng,
+                assignment_top_k=randomized_assignment_top_k if randomize_assignment else 1,
+                randomize_assignment_top_k=randomize_assignment,
+                assignment_temperature=randomized_assignment_temperature,
             )
         candidates.append((cmax, order, df, strategy))
         strategy_best[strategy] = min(strategy_best.get(strategy, cmax), cmax)
@@ -750,12 +950,32 @@ def optimize_schedule(
         strategy = random_modes[i % len(random_modes)]
         if strategy in {"random", "random_weighted"} and i % 3 == 0:
             df, cmax, order = dispatch_schedule(
-                operations, workshop_ops, machines, distance, allowed_teams, strategy, "earliest_completion_time", rng
+                operations,
+                workshop_ops,
+                machines,
+                distance,
+                allowed_teams,
+                strategy,
+                "earliest_completion_time",
+                rng,
+                assignment_top_k=randomized_assignment_top_k,
+                randomize_assignment_top_k=True,
+                assignment_temperature=randomized_assignment_temperature,
             )
         else:
             order = build_topological_order(operations, workshop_ops, mode=strategy, rng=rng, machines=metric_machines)
+            randomize_assignment = strategy in {"random", "random_weighted"}
             df, cmax = schedule_by_order(
-                operations, workshop_ops, machines, distance, allowed_teams=allowed_teams, priority_order=order
+                operations,
+                workshop_ops,
+                machines,
+                distance,
+                allowed_teams=allowed_teams,
+                priority_order=order,
+                rng=rng,
+                assignment_top_k=randomized_assignment_top_k if randomize_assignment else 1,
+                randomize_assignment_top_k=randomize_assignment,
+                assignment_temperature=randomized_assignment_temperature,
             )
         candidates.append((cmax, order, df, strategy))
         strategy_best[strategy] = min(strategy_best.get(strategy, cmax), cmax)
@@ -786,6 +1006,10 @@ def optimize_schedule(
         "worst": int(max(values)),
         "strategy_best": strategy_best,
         "local_search_improvements": improvements,
+        "randomized_assignment_enabled": True,
+        "randomized_assignment_applies_to": "random/random_weighted strategies",
+        "assignment_top_k": randomized_assignment_top_k,
+        "assignment_temperature": randomized_assignment_temperature,
     }
     return best_df, int(best_cmax), stats, best_order
 
@@ -823,15 +1047,18 @@ def generate_purchase_candidates(
     teams: list[int],
     max_total_new_machines: int | None = None,
     max_per_type_team: int | None = None,
+    per_type_team_limit: dict | None = None,
 ) -> list[dict]:
     if not prices:
         return [{}]
     min_price = min(prices.values())
     theoretical_max = budget // min_price
     if max_total_new_machines is None:
-        max_total_new_machines = max(1, int(math.floor(math.sqrt(max(1, theoretical_max)))))
+        max_total_new_machines = min(theoretical_max, DEFAULT_MAX_TOTAL_NEW_MACHINES)
     if max_per_type_team is None:
-        max_per_type_team = max(1, int(math.ceil(max_total_new_machines / max(1, len(prices)))))
+        max_per_type_team = DEFAULT_MAX_PER_TYPE_TEAM
+    max_total_new_machines = max(0, int(max_total_new_machines))
+    max_per_type_team = max(0, int(max_per_type_team))
 
     keys = [(team, t) for team in teams for t in prices]
     candidates = [{}]
@@ -842,7 +1069,10 @@ def generate_purchase_candidates(
                 candidates.append(dict(scheme))
             return
         team, t = keys[idx]
-        max_cnt = min(max_per_type_team, remaining_count, remaining_budget // prices[t])
+        local_limit = max_per_type_team
+        if per_type_team_limit is not None:
+            local_limit = per_type_team_limit.get((team, t), per_type_team_limit.get(t, max_per_type_team))
+        max_cnt = min(int(local_limit), remaining_count, remaining_budget // prices[t])
         for cnt in range(max_cnt + 1):
             if cnt:
                 scheme[(team, t)] = cnt
@@ -877,6 +1107,122 @@ def purchased_utilization(schedule_df, makespan):
     return float(new_rows["持续工作时间(s)"].sum() / (makespan * new_machine_count))
 
 
+def compute_machine_type_statistics(schedule_df, makespan):
+    """Summarize workload, transport burden and average utilization by equipment type."""
+    columns = ["设备类型", "设备数量", "总工作时长(s)", "总运输时间(s)", "平均利用率", "运输时间占比", "作业记录数"]
+    if schedule_df is None or schedule_df.empty:
+        return pd.DataFrame(columns=columns)
+    rows = []
+    for t, g in schedule_df.groupby("设备类型"):
+        machine_count = max(1, g["设备编号"].nunique())
+        work = float(g["持续工作时间(s)"].sum())
+        transport = float(g["运输时间(s)"].sum()) if "运输时间(s)" in g else 0.0
+        rows.append(
+            {
+                "设备类型": t,
+                "设备数量": int(machine_count),
+                "总工作时长(s)": work,
+                "总运输时间(s)": transport,
+                "平均利用率": work / (makespan * machine_count) if makespan > 0 else np.nan,
+                "运输时间占比": transport / (work + transport) if work + transport > 0 else 0.0,
+                "作业记录数": int(len(g)),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns).sort_values(["平均利用率", "总工作时长(s)"], ascending=False)
+
+
+def identify_bottleneck_types(schedule_df, makespan, top_k=3):
+    """Rank equipment types by utilization, load, transport share and presence in latest workshop."""
+    stats = compute_machine_type_statistics(schedule_df, makespan)
+    if stats.empty:
+        return []
+    latest_workshops = set()
+    if "车间" in schedule_df and "结束秒" in schedule_df:
+        workshop_completion = schedule_df.groupby("车间")["结束秒"].max()
+        if not workshop_completion.empty:
+            max_finish = workshop_completion.max()
+            latest_workshops = set(workshop_completion[workshop_completion == max_finish].index)
+    max_work = max(float(stats["总工作时长(s)"].max()), 1.0)
+    ranked = []
+    for _, row in stats.iterrows():
+        t = row["设备类型"]
+        in_latest = 1.0 if not latest_workshops or not schedule_df[(schedule_df["设备类型"] == t) & (schedule_df["车间"].isin(latest_workshops))].empty else 0.0
+        score = (
+            0.45 * float(row["平均利用率"])
+            + 0.30 * float(row["总工作时长(s)"]) / max_work
+            + 0.15 * float(row["运输时间占比"])
+            + 0.10 * in_latest
+        )
+        ranked.append((score, t))
+    ranked.sort(reverse=True)
+    return [t for _, t in ranked[: max(1, int(top_k))]]
+
+
+def compute_schedule_statistics(schedule_df, makespan):
+    """Build paper-oriented diagnostic tables for one schedule."""
+    if schedule_df is None or schedule_df.empty:
+        empty = pd.DataFrame()
+        return {
+            "workshop_completion": empty,
+            "machine_type_stats": empty,
+            "team_stats": empty,
+            "new_machine_stats": empty,
+            "bottleneck_type_stats": empty,
+        }
+
+    workshop_completion = schedule_df.groupby("车间")["结束秒"].max().reset_index()
+    latest = workshop_completion["结束秒"].max()
+    workshop_completion = workshop_completion.rename(columns={"结束秒": "完工时间(s)"})
+    workshop_completion["完工时间(HH:MM:SS)"] = workshop_completion["完工时间(s)"].map(seconds_to_hhmmss)
+    workshop_completion["是否最晚完工车间"] = workshop_completion["完工时间(s)"] == latest
+
+    machine_type_stats = compute_machine_type_statistics(schedule_df, makespan)
+    type_order = machine_type_stats.sort_values(["平均利用率", "总工作时长(s)"], ascending=False)
+
+    team_rows = []
+    for team, g in schedule_df.groupby("班组"):
+        machine_count = max(1, g["设备编号"].nunique())
+        work = float(g["持续工作时间(s)"].sum())
+        transport = float(g["运输时间(s)"].sum())
+        team_rows.append(
+            {
+                "班组": f"班组{int(team)}" if pd.notna(team) else "",
+                "设备数量": int(machine_count),
+                "总工作时长(s)": work,
+                "总运输时间(s)": transport,
+                "平均利用率": work / (makespan * machine_count) if makespan > 0 else np.nan,
+                "作业记录数": int(len(g)),
+            }
+        )
+    team_stats = pd.DataFrame(team_rows)
+
+    new_rows = []
+    if "是否新购" in schedule_df:
+        for mid, g in schedule_df[schedule_df["是否新购"].astype(bool)].groupby("设备编号"):
+            work = float(g["持续工作时间(s)"].sum())
+            transport = float(g["运输时间(s)"].sum())
+            first = g.iloc[0]
+            new_rows.append(
+                {
+                    "设备编号": mid,
+                    "设备类型": first["设备类型"],
+                    "班组": f"班组{int(first['班组'])}",
+                    "总工作时长(s)": work,
+                    "总运输时间(s)": transport,
+                    "利用率": work / makespan if makespan > 0 else np.nan,
+                }
+            )
+    new_machine_stats = pd.DataFrame(new_rows)
+
+    return {
+        "workshop_completion": workshop_completion.sort_values("完工时间(s)", ascending=False),
+        "machine_type_stats": machine_type_stats,
+        "team_stats": team_stats,
+        "new_machine_stats": new_machine_stats,
+        "bottleneck_type_stats": type_order,
+    }
+
+
 def schedule_problem_4(
     operations,
     workshop_ops,
@@ -888,11 +1234,43 @@ def schedule_problem_4(
     refine_iterations=800,
     top_k=10,
     random_seed=RANDOM_SEED,
+    max_total_new_machines=None,
+    max_per_type_team=None,
+    reference_schedule_df=None,
+    reference_makespan=None,
 ):
-    candidates = generate_purchase_candidates(prices, budget, teams=[1, 2])
+    min_price = min(prices.values()) if prices else 0
+    theoretical_max = budget // min_price if min_price else 0
+    effective_max_total = (
+        min(theoretical_max, DEFAULT_MAX_TOTAL_NEW_MACHINES)
+        if max_total_new_machines is None
+        else int(max_total_new_machines)
+    )
+    effective_max_per_type = DEFAULT_MAX_PER_TYPE_TEAM if max_per_type_team is None else int(max_per_type_team)
+    bottleneck_types = []
+    bottleneck_guided = reference_schedule_df is not None and reference_makespan is not None
+    if bottleneck_guided:
+        bottleneck_types = identify_bottleneck_types(reference_schedule_df, reference_makespan, top_k=3)
+    per_type_team_limit = {}
+    for team in [1, 2]:
+        for t in prices:
+            per_type_team_limit[(team, t)] = effective_max_per_type if t in bottleneck_types else min(1, effective_max_per_type)
+
+    candidates = generate_purchase_candidates(
+        prices,
+        budget,
+        teams=[1, 2],
+        max_total_new_machines=effective_max_total,
+        max_per_type_team=effective_max_per_type,
+        per_type_team_limit=per_type_team_limit if bottleneck_guided else None,
+    )
     cap_note = (
-        f"候选生成默认上限由预算/最低单价自动推导；候选数={len(candidates)}，"
-        f"quick_iterations={quick_iterations}, refine_iterations={refine_iterations}, top_k={top_k}"
+        f"budget={budget}, min_price={min_price}, theoretical_max_new_machines={theoretical_max}, "
+        f"max_total_new_machines={effective_max_total}, max_per_type_team={effective_max_per_type}, "
+        f"candidate_count={len(candidates)}, quick_iterations={quick_iterations}, "
+        f"refine_iterations={refine_iterations}, top_k={top_k}, "
+        f"bottleneck_types={[TYPE_CN.get(t, t) for t in bottleneck_types]}, "
+        f"bottleneck_guided={bottleneck_guided}"
     )
     quick_rows = []
     for idx, scheme in enumerate(candidates):
@@ -904,7 +1282,7 @@ def schedule_problem_4(
             nm,
             distance,
             [1, 2],
-            iterations=max(100, quick_iterations),
+            iterations=max(0, int(quick_iterations)),
             local_search=False,
             random_seed=seed,
         )
@@ -941,7 +1319,7 @@ def schedule_problem_4(
             nm,
             distance,
             [1, 2],
-            iterations=max(100, refine_iterations),
+            iterations=max(0, int(refine_iterations)),
             local_search=True,
             random_seed=random_seed + 10000 + idx * 31,
         )
@@ -997,7 +1375,18 @@ def schedule_problem_4(
         )
     p4_stats = {
         "purchase_candidate_note": cap_note,
+        "budget": budget,
+        "min_price": min_price,
+        "theoretical_max_new_machines": theoretical_max,
+        "max_total_new_machines": effective_max_total,
+        "max_per_type_team": effective_max_per_type,
         "candidate_count": len(candidates),
+        "quick_iterations": quick_iterations,
+        "refine_iterations": refine_iterations,
+        "top_k": top_k,
+        "bottleneck_types": bottleneck_types,
+        "bottleneck_guided": bottleneck_guided,
+        "per_type_team_limit": per_type_team_limit,
         "quick_candidates": pd.DataFrame(candidate_rows),
         "refined_count": len(refined_rows),
         "best_cost": best["cost"],
@@ -1243,7 +1632,22 @@ def run_baselines(operations, workshop_ops, machines, distance, problem_specs):
             feasible, _ = check_feasibility(df, check_operations, check_machines, distance, verbose=False)
             baseline_values[col] = cmax if feasible else np.nan
         rows.append({"问题": problem_name, "本文启发式搜索(s)": heuristic_cmax, **baseline_values})
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    for base_col in [
+        "A→E串行(s)",
+        "最快设备优先(s)",
+        "最近可用设备优先(s)",
+        "最早可用设备优先(s)",
+        "最早完成优先(s)",
+    ]:
+        improve_col = "相对" + base_col.replace("(s)", "改善率")
+        result[improve_col] = result.apply(
+            lambda r: (r[base_col] - r["本文启发式搜索(s)"]) / r[base_col]
+            if pd.notna(r.get(base_col)) and r.get(base_col) not in (0, np.nan)
+            else np.nan,
+            axis=1,
+        )
+    return result
 
 
 def make_fill_table(schedule_df, include_team=False):
@@ -1251,6 +1655,8 @@ def make_fill_table(schedule_df, include_team=False):
     if include_team:
         cols.append("班组")
     result = schedule_df[cols].copy()
+    if include_team and "班组" in result:
+        result["班组"] = result["班组"].map(lambda x: f"班组{int(x)}" if pd.notna(x) else "")
     result["序号"] = range(1, len(result) + 1)
     return result
 
@@ -1276,6 +1682,10 @@ def make_full_table(schedule_df, problem_name):
     df = schedule_df.copy()
     if "问题" not in df.columns:
         df.insert(0, "问题", problem_name)
+    if "班组名称" not in df.columns and "班组" in df.columns:
+        df.insert(df.columns.get_loc("班组") + 1, "班组名称", df["班组"].map(lambda x: f"班组{int(x)}" if pd.notna(x) else ""))
+    if "班组名称" not in cols:
+        cols.insert(cols.index("是否新购"), "班组名称")
     return df[cols]
 
 
@@ -1289,7 +1699,7 @@ def export_results(output_path, tables):
             df.to_excel(writer, sheet_name=safe_name, index=False)
 
 
-def plot_gantt(schedule, title, output_prefix):
+def plot_gantt(schedule, title, output_prefix, makespan=None):
     if schedule.empty:
         return []
     os.makedirs(os.path.dirname(output_prefix) or ".", exist_ok=True)
@@ -1303,8 +1713,8 @@ def plot_gantt(schedule, title, output_prefix):
     ypos = {m: i for i, m in enumerate(machines)}
     colors = dict(zip(WORKSHOPS, plt.cm.Set2.colors[: len(WORKSHOPS)]))
 
-    fig_h = max(4.5, 0.36 * len(machines) + 1.5)
-    fig, ax = plt.subplots(figsize=(14, fig_h))
+    fig_h = max(4.8, 0.42 * len(machines) + 1.8)
+    fig, ax = plt.subplots(figsize=(16, fig_h))
     for _, r in df.iterrows():
         left = r["起始秒"] / 3600.0
         width = (r["结束秒"] - r["起始秒"]) / 3600.0
@@ -1327,14 +1737,17 @@ def plot_gantt(schedule, title, output_prefix):
         labels.append(f"T{int(r['班组'])} | {TYPE_CN.get(r['设备类型'], r['设备类型'])} | {mid}")
     ax.set_yticks(range(len(machines)))
     ax.set_yticklabels(labels, fontsize=7)
-    ax.set_xlabel("Time / hour")
-    ax.set_title(title)
+    ax.set_xlabel("Time / h")
+    display_title = title
+    if makespan is not None:
+        display_title = f"{title}, makespan={seconds_to_hhmmss(makespan)}"
+    ax.set_title(display_title)
     ax.grid(axis="x", alpha=0.25, linestyle="--", linewidth=0.5)
     handles = [Patch(facecolor=colors[w], edgecolor="black", label=w) for w in WORKSHOPS]
     if df["是否新购"].astype(bool).any():
         handles.append(Patch(facecolor="white", edgecolor="black", hatch="//", label="Purchased"))
-    ax.legend(handles=handles, title="Workshop", loc="upper right", fontsize=8)
-    fig.tight_layout()
+    ax.legend(handles=handles, title="Workshop", loc="upper left", bbox_to_anchor=(1.01, 1.0), fontsize=8)
+    fig.tight_layout(rect=[0, 0, 0.86, 1])
     paths = []
     for ext in ["png", "pdf"]:
         path = f"{output_prefix}.{ext}"
@@ -1344,27 +1757,102 @@ def plot_gantt(schedule, title, output_prefix):
     return paths
 
 
-def main(file_path="B-attachment.xlsx", output_xlsx=None, output_dir="outputs", make_plots=True):
+def find_input_file(user_path=None):
+    """Find the input Excel file from an explicit path or common attachment names."""
+    if user_path:
+        if os.path.exists(user_path):
+            return user_path
+        raise FileNotFoundError(f"找不到指定输入文件: {user_path}")
+    common_names = ["B-attachment.xlsx", "B-附件.xlsx", "附件.xlsx", "B.xlsx"]
+    search_dirs = [".", "data"]
+    for directory in search_dirs:
+        for name in common_names:
+            path = os.path.join(directory, name)
+            if os.path.exists(path):
+                return path
+    candidates = []
+    for directory in search_dirs:
+        if os.path.isdir(directory):
+            candidates.extend(os.path.join(directory, x) for x in os.listdir(directory) if x.lower().endswith(".xlsx"))
+    candidates = sorted(set(candidates))
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        raise FileNotFoundError("找到多个 .xlsx 文件，请用 --file 指定输入文件: " + ", ".join(candidates))
+    raise FileNotFoundError("找不到输入 Excel 文件，请将附件放在当前目录/data 目录，或使用 --file 指定")
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="FJSP scheduling solver for 51MCM Problem B")
+    parser.add_argument("--file", default=None, help="输入 Excel 文件路径")
+    parser.add_argument("--out", default=None, help="输出 Excel 文件路径")
+    parser.add_argument("--output-dir", default="outputs", help="输出目录")
+    parser.add_argument("--no-plots", action="store_true", help="不生成甘特图")
+    parser.add_argument("--p2-iter", type=int, default=1000, help="问题2启发式搜索次数")
+    parser.add_argument("--p3-iter", type=int, default=1000, help="问题3启发式搜索次数")
+    parser.add_argument("--p4-quick-iter", type=int, default=100, help="问题4候选方案快速评估搜索次数")
+    parser.add_argument("--p4-refine-iter", type=int, default=800, help="问题4入围方案精细评估搜索次数")
+    parser.add_argument("--p4-top-k", type=int, default=10, help="问题4进入精细评估的候选数量")
+    parser.add_argument("--max-new-machines", type=int, default=None, help="问题4最多新增设备总数")
+    parser.add_argument("--max-per-type-team", type=int, default=None, help="问题4每个班组每类设备最多新增台数")
+    parser.add_argument("--no-expand-c", action="store_true", help="关闭 C3/C4/C5 重复工序展开")
+    return parser.parse_args()
+
+
+def main(
+    file_path=None,
+    output_xlsx=None,
+    output_dir="outputs",
+    make_plots=True,
+    p2_iterations=1000,
+    p3_iterations=1000,
+    p4_quick_iterations=100,
+    p4_refine_iterations=800,
+    p4_top_k=10,
+    max_total_new_machines=None,
+    max_per_type_team=None,
+    expand_c_repeated_ops=EXPAND_C_REPEATED_OPS,
+):
     random.seed(RANDOM_SEED)
     np.random.seed(RANDOM_SEED)
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"找不到输入文件: {file_path}。请将附件 Excel 放到当前目录，或调用 main(file_path=...) 指定路径。")
+    file_path = find_input_file(file_path)
     os.makedirs(output_dir, exist_ok=True)
     if output_xlsx is None:
         output_xlsx = os.path.join(output_dir, "fjsp_results.xlsx")
 
     dfs = load_data(file_path)
-    operations, workshop_ops, machines, distance, prices, expansion_df, warnings = preprocess_data(dfs)
+    (
+        operations,
+        workshop_ops,
+        machines,
+        distance,
+        prices,
+        expansion_df,
+        warnings,
+        distance_format,
+        efficiency_notes_df,
+    ) = preprocess_data(dfs, expand_c_repeated_ops=expand_c_repeated_ops)
     p1_operations = subset_operations(operations, ["A"])
     p1_workshop_ops = workshop_ops_from_operations(p1_operations)
 
     print(f"工序数量: {len(operations)}，设备数量: {len(machines)}，设备类型数量: {len(set(m.type for m in machines.values()))}")
 
     p1_df, p1_c = schedule_problem_1(operations, workshop_ops, machines, distance)
-    p2_df, p2_c, p2_stats, _ = optimize_schedule(operations, workshop_ops, machines, distance, [1], iterations=1000)
-    p3_df, p3_c, p3_stats, _ = optimize_schedule(operations, workshop_ops, machines, distance, [1, 2], iterations=1000)
+    p2_df, p2_c, p2_stats, _ = optimize_schedule(operations, workshop_ops, machines, distance, [1], iterations=p2_iterations)
+    p3_df, p3_c, p3_stats, _ = optimize_schedule(operations, workshop_ops, machines, distance, [1, 2], iterations=p3_iterations)
     p4_df, p4_c, p5_df, best_purchase_scheme, machines_with_purchases, p4_stats = schedule_problem_4(
-        operations, workshop_ops, machines, distance, prices
+        operations,
+        workshop_ops,
+        machines,
+        distance,
+        prices,
+        quick_iterations=p4_quick_iterations,
+        refine_iterations=p4_refine_iterations,
+        top_k=p4_top_k,
+        max_total_new_machines=max_total_new_machines,
+        max_per_type_team=max_per_type_team,
+        reference_schedule_df=p3_df,
+        reference_makespan=p3_c,
     )
 
     p1_df = finalize_schedule(p1_df.drop(columns=["问题"], errors="ignore").to_dict("records"), "问题1")
@@ -1408,6 +1896,7 @@ def main(file_path="B-attachment.xlsx", output_xlsx=None, output_dir="outputs", 
                 "综合下界(s)": combined,
                 "本文可行解(s)": cmax,
                 "gap": (cmax - combined) / combined if combined else np.nan,
+                "gap百分比": (cmax - combined) / combined if combined else np.nan,
                 "说明": lb["运输下界说明"],
             }
         )
@@ -1425,35 +1914,133 @@ def main(file_path="B-attachment.xlsx", output_xlsx=None, output_dir="outputs", 
         ],
     )
 
+    schedule_stats = {
+        "问题1": compute_schedule_statistics(p1_df, p1_c),
+        "问题2": compute_schedule_statistics(p2_df, p2_c),
+        "问题3": compute_schedule_statistics(p3_df, p3_c),
+        "问题4": compute_schedule_statistics(p4_df, p4_c),
+    }
+    bottleneck_analysis = []
+    for name, stat in schedule_stats.items():
+        df = stat["bottleneck_type_stats"].copy()
+        if not df.empty:
+            df.insert(0, "问题", name)
+            bottleneck_analysis.append(df)
+    bottleneck_analysis_df = pd.concat(bottleneck_analysis, ignore_index=True) if bottleneck_analysis else pd.DataFrame()
+
+    def explain_row(problem_name):
+        stat = schedule_stats[problem_name]
+        wc = stat["workshop_completion"]
+        mt = stat["machine_type_stats"]
+        latest = "、".join(wc.loc[wc["是否最晚完工车间"], "车间"].astype(str)) if not wc.empty else ""
+        high_util = mt.iloc[0]["设备类型"] if not mt.empty else ""
+        high_transport = mt.sort_values("运输时间占比", ascending=False).iloc[0]["设备类型"] if not mt.empty else ""
+        return latest, TYPE_CN.get(high_util, high_util), TYPE_CN.get(high_transport, high_transport)
+
+    p1_latest, p1_high_util, p1_high_transport = explain_row("问题1")
+    p2_latest, p2_high_util, p2_high_transport = explain_row("问题2")
+    p3_latest, p3_high_util, p3_high_transport = explain_row("问题3")
+    p4_latest, p4_high_util, p4_high_transport = explain_row("问题4")
+    p4_new_util = purchased_utilization(p4_df, p4_c)
+
     summary_rows = [
         {
             "问题": "问题1",
             "精确最短时长(s)": p1_c,
             "精确最短时长(HH:MM:SS)": seconds_to_hhmmss(p1_c),
-            "备注": "由于 A 车间工序严格串行，枚举设备组合覆盖全部可行方案",
+            "最晚完工车间": p1_latest,
+            "利用率最高设备类型": p1_high_util,
+            "运输时间占比最高设备类型": p1_high_transport,
+            "备注": "由于 A 车间工序严格串行，枚举设备组合覆盖全部可行设备选择，可视为精确最短时长",
         },
         {
             "问题": "问题2",
             "当前搜索最优可行时长(s)": p2_c,
             "当前搜索最优可行时长(HH:MM:SS)": seconds_to_hhmmss(p2_c),
-            "备注": f"best feasible schedule found; 多策略启发式+局部扰动，搜索次数={p2_stats['iterations']}",
+            "最晚完工车间": p2_latest,
+            "利用率最高设备类型": p2_high_util,
+            "运输时间占比最高设备类型": p2_high_transport,
+            "备注": f"启发式搜索得到的当前搜索范围内最优可行解，不声称全局最优；搜索次数={p2_stats['iterations']}",
         },
         {
             "问题": "问题3",
             "当前搜索最优可行时长(s)": p3_c,
             "当前搜索最优可行时长(HH:MM:SS)": seconds_to_hhmmss(p3_c),
-            "备注": f"best feasible schedule found; 双班组联合调度，搜索次数={p3_stats['iterations']}",
+            "最晚完工车间": p3_latest,
+            "利用率最高设备类型": p3_high_util,
+            "运输时间占比最高设备类型": p3_high_transport,
+            "备注": f"启发式搜索得到的当前搜索范围内最优可行解，不声称全局最优；双班组联合调度，搜索次数={p3_stats['iterations']}",
         },
         {
             "问题": "问题4",
             "当前搜索最优可行时长(s)": p4_c,
             "当前搜索最优可行时长(HH:MM:SS)": seconds_to_hhmmss(p4_c),
-            "备注": f"best feasible schedule found; 购置费用={purchase_cost(best_purchase_scheme, prices)}; {p4_stats['purchase_candidate_note']}",
+            "最晚完工车间": p4_latest,
+            "利用率最高设备类型": p4_high_util,
+            "运输时间占比最高设备类型": p4_high_transport,
+            "问题4新购设备平均利用率": p4_new_util,
+            "备注": f"启发式搜索得到的当前搜索范围内最优可行解，不声称全局最优；购置费用={purchase_cost(best_purchase_scheme, prices)}; {p4_stats['purchase_candidate_note']}",
+        },
+        {
+            "问题": "数据读取",
+            "备注": f"距离表识别格式={distance_format}; 输入文件={file_path}",
+        },
+        {
+            "问题": "C工序展开",
+            "备注": (
+                f"是否启用={expand_c_repeated_ops}; 展开集合={sorted(C_REPEATED_BASE_OPS)}; "
+                f"展开次数={C_REPEATED_COUNT}; 这是基于对附件 C3-C5 重复工程段的解释，用户应核对原始题目数据。"
+            ),
         },
     ]
     for warning in warnings:
         summary_rows.append({"问题": "C工序展开", "备注": warning})
     summary_df = pd.DataFrame(summary_rows).fillna("")
+
+    model_explain_df = pd.DataFrame(
+        [
+            {
+                "主题": "问题1最优性",
+                "说明": "A 车间工序严格串行，代码采用设备组合枚举，覆盖全部可行设备选择，因此可视为精确最短时长。",
+            },
+            {
+                "主题": "问题2-4最优性声明",
+                "说明": "问题2-4属于带运输时间、多设备、多班组和购置决策耦合的组合优化问题；本代码采用多策略启发式搜索获得当前搜索范围内的最优可行解，不声称严格全局最优。",
+            },
+            {
+                "主题": "可信度支撑",
+                "说明": "结果通过可行性检查、理论下界、基准规则对比和瓶颈统计进行解释，便于论文中说明可行性与合理性。",
+            },
+        ]
+    )
+    p4_search_df = pd.DataFrame(
+        [
+            {"参数": "budget", "值": p4_stats["budget"]},
+            {"参数": "min_price", "值": p4_stats["min_price"]},
+            {"参数": "theoretical_max_new_machines", "值": p4_stats["theoretical_max_new_machines"]},
+            {"参数": "max_total_new_machines", "值": p4_stats["max_total_new_machines"]},
+            {"参数": "max_per_type_team", "值": p4_stats["max_per_type_team"]},
+            {"参数": "candidate_count", "值": p4_stats["candidate_count"]},
+            {"参数": "quick_iterations", "值": p4_stats["quick_iterations"]},
+            {"参数": "refine_iterations", "值": p4_stats["refine_iterations"]},
+            {"参数": "top_k", "值": p4_stats["top_k"]},
+            {"参数": "bottleneck_types", "值": "；".join(TYPE_CN.get(t, t) for t in p4_stats["bottleneck_types"])},
+            {"参数": "bottleneck_guided", "值": p4_stats["bottleneck_guided"]},
+        ]
+    )
+    c_expansion_config_df = pd.DataFrame(
+        [
+            {"配置项": "是否启用C工序展开", "配置值": expand_c_repeated_ops, "说明": "可通过 --no-expand-c 关闭"},
+            {"配置项": "展开原始工序集合", "配置值": "、".join(sorted(C_REPEATED_BASE_OPS)), "说明": "默认解释 C3-C5 为重复工程段"},
+            {"配置项": "展开次数", "配置值": C_REPEATED_COUNT, "说明": "每个原始工序展开为若干内部工序"},
+            {"配置项": "人工核对提示", "配置值": "需要", "说明": "该规则基于附件理解，建议结合题面和原始数据核对"},
+        ]
+    )
+    c_expansion_sheet = pd.concat(
+        [c_expansion_config_df, expansion_df],
+        ignore_index=True,
+        sort=False,
+    )
 
     full_tables = {
         "表1": make_fill_table(p1_df, include_team=False),
@@ -1469,19 +2056,34 @@ def main(file_path="B-attachment.xlsx", output_xlsx=None, output_dir="outputs", 
         "Feasibility": checks_df,
         "理论下界对比": lbs_df,
         "基准规则对比": baselines_df,
+        "模型求解说明": model_explain_df,
+        "效率单位识别说明": efficiency_notes_df,
+        "问题1车间完工": schedule_stats["问题1"]["workshop_completion"],
+        "问题2车间完工": schedule_stats["问题2"]["workshop_completion"],
+        "问题3车间完工": schedule_stats["问题3"]["workshop_completion"],
+        "问题4车间完工": schedule_stats["问题4"]["workshop_completion"],
+        "问题1设备类型统计": schedule_stats["问题1"]["machine_type_stats"],
+        "问题2设备类型统计": schedule_stats["问题2"]["machine_type_stats"],
+        "问题3设备类型统计": schedule_stats["问题3"]["machine_type_stats"],
+        "问题4设备类型统计": schedule_stats["问题4"]["machine_type_stats"],
+        "问题1班组统计": schedule_stats["问题1"]["team_stats"],
+        "问题2班组统计": schedule_stats["问题2"]["team_stats"],
+        "问题3班组统计": schedule_stats["问题3"]["team_stats"],
+        "问题4班组统计": schedule_stats["问题4"]["team_stats"],
+        "问题4新购设备统计": schedule_stats["问题4"]["new_machine_stats"],
+        "瓶颈设备类型分析": bottleneck_analysis_df,
+        "问题4候选搜索说明": p4_search_df,
         "问题4候选购置方案对比": p4_stats["quick_candidates"],
-        "C工序展开说明": expansion_df
-        if not expansion_df.empty
-        else pd.DataFrame(columns=["原始工序编号", "内部展开编号", "车间", "工程量", "所需设备类型", "展开原因说明"]),
+        "C工序展开说明": c_expansion_sheet,
     }
     export_results(output_xlsx, full_tables)
 
     gantt_paths = []
     if make_plots:
-        gantt_paths.extend(plot_gantt(p1_df, "问题1 当前搜索最优可行排程", os.path.join(output_dir, "problem1_gantt")))
-        gantt_paths.extend(plot_gantt(p2_df, "问题2 当前搜索最优可行排程", os.path.join(output_dir, "problem2_gantt")))
-        gantt_paths.extend(plot_gantt(p3_df, "问题3 当前搜索最优可行排程", os.path.join(output_dir, "problem3_gantt")))
-        gantt_paths.extend(plot_gantt(p4_df, "问题4 当前搜索最优可行排程", os.path.join(output_dir, "problem4_gantt")))
+        gantt_paths.extend(plot_gantt(p1_df, "问题1 当前搜索最优可行排程", os.path.join(output_dir, "problem1_gantt"), makespan=p1_c))
+        gantt_paths.extend(plot_gantt(p2_df, "问题2 当前搜索最优可行排程", os.path.join(output_dir, "problem2_gantt"), makespan=p2_c))
+        gantt_paths.extend(plot_gantt(p3_df, "问题3 当前搜索最优可行排程", os.path.join(output_dir, "problem3_gantt"), makespan=p3_c))
+        gantt_paths.extend(plot_gantt(p4_df, "问题4 当前搜索最优可行排程", os.path.join(output_dir, "problem4_gantt"), makespan=p4_c))
 
     print("\n主流程输出摘要:")
     print(summary_df.to_string(index=False))
@@ -1490,7 +2092,7 @@ def main(file_path="B-attachment.xlsx", output_xlsx=None, output_dir="outputs", 
     print("\n各问题可行性检查结果:")
     print(checks_df.groupby("问题")["是否通过"].all().to_string())
     print("\n理论下界 gap:")
-    print(lbs_df[["问题", "综合下界(s)", "本文可行解(s)", "gap"]].to_string(index=False))
+    print(lbs_df[["问题", "综合下界(s)", "本文可行解(s)", "gap百分比"]].to_string(index=False))
     print("\nBaseline 对比:")
     print(baselines_df.to_string(index=False))
     print(f"\nExcel 输出路径: {output_xlsx}")
@@ -1509,10 +2111,26 @@ def main(file_path="B-attachment.xlsx", output_xlsx=None, output_dir="outputs", 
         "p4_purchase_scheme": best_purchase_scheme,
         "machines_with_purchases": machines_with_purchases,
         "stats": {"p2": p2_stats, "p3": p3_stats, "p4": p4_stats},
+        "distance_format": distance_format,
+        "efficiency_unit_notes": efficiency_notes_df,
         "output_xlsx": output_xlsx,
         "gantt_paths": gantt_paths,
     }
 
 
 if __name__ == "__main__":
-    result = main(file_path="B-attachment.xlsx", output_xlsx=os.path.join("outputs", "fjsp_results.xlsx"), make_plots=True)
+    args = parse_args()
+    result = main(
+        file_path=args.file,
+        output_xlsx=args.out,
+        output_dir=args.output_dir,
+        make_plots=not args.no_plots,
+        p2_iterations=args.p2_iter,
+        p3_iterations=args.p3_iter,
+        p4_quick_iterations=args.p4_quick_iter,
+        p4_refine_iterations=args.p4_refine_iter,
+        p4_top_k=args.p4_top_k,
+        max_total_new_machines=args.max_new_machines,
+        max_per_type_team=args.max_per_type_team,
+        expand_c_repeated_ops=not args.no_expand_c,
+    )
