@@ -19,8 +19,14 @@
 \usepackage{enumitem}
 \usepackage{hyperref}
 \usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{amsthm}
 \usepackage{booktabs} 
 \usepackage{url}
+\usepackage{newunicodechar}
+\usepackage[strings]{underscore}
+\newunicodechar{✅}{\ensuremath{\checkmark}}
+\newunicodechar{❌}{\ensuremath{\times}}
 
 % ---------- 页面设置 ----------
 \geometry{
@@ -40,6 +46,7 @@
 
 % ---------- 正文基础格式 ----------
 % 小四号约等于 12pt；宋体；单倍行距
+\setmonofont{Menlo}
 \zihao{-4}
 \songti
 \setstretch{1.0}
@@ -88,10 +95,15 @@
 \titlespacing*{\subsection}{0pt}{0.8em}{0.5em}
 \titlespacing*{\subsubsection}{0pt}{0.6em}{0.4em}
 
+% ctexart 不提供 \chapter；保留正文中的章节命令写法并映射到 \section
+\providecommand{\chapter}{\section}
+
 % ---------- 参考文献引用命令 ----------
 % 用法：\upcite{1} 输出 [1]
 % 多个引用可写为：\upcite{1}\upcite{3}，输出 [1][3]
 \newcommand{\upcite}[1]{\textsuperscript{[#1]}}
+\newtheorem{theorem}{定理}
+\newtheorem{proposition}{命题}
 
 % 如不希望上标引用，可改用下面这个命令：
 % \newcommand{\citeplain}[1]{[#1]}
@@ -312,7 +324,7 @@ $z_{gr}$ & P4 中班组 $g$ 新购类型 $r$ 设备的数量 & 台 \\
 
 \textbf{规则 1：} 表 3-2 中的全部符号在第 5 章统一模型中均有使用。仅在代码中出现的中间变量（如 CP-SAT 的布尔字面量、电路约束的辅助弧变量）未列入正文符号表，详见附录 B。
 
-\textbf{规则 2：} 符号中的下标 $k$ 为设备编号（如 PFM1-3、ICM2-5），下标 $j$ 为工序编号（如 A1、C5_3），下标 $i$ 为车间编号（如 A、B），下标 $g$ 为班组编号（1 或 2）。全文始终统一使用该编号约定。
+\textbf{规则 2：} 符号中的下标 $k$ 为设备编号（如 PFM1-3、ICM2-5），下标 $j$ 为工序编号（如 A1、C5\_3），下标 $i$ 为车间编号（如 A、B），下标 $g$ 为班组编号（1 或 2）。全文始终统一使用该编号约定。
 
 \textbf{规则 3：} 设备类型的英文缩写全文统一：自动化输送臂对应 ACA（Automated Conveying Arm）、工业清洗机对应 ICM（Industrial Cleaning Machine）、精密灌装机对应 PFM（Precision Filling Machine）、自动传感多功能机对应 ASM（Automatic Sensing Multi-Function Machine）、高速抛光机对应 HPM（High-speed Polishing Machine）。
 
@@ -396,7 +408,7 @@ HPM（高速抛光机） & HPM1-1 & HPM2-1 & 2 \\
 \end{tabular}
 \end{center}
 
-设备编号格式为 $设备类型$组别$编号，如 PFM1-3 表示班组 1 的第 3 台精密灌装机。设备的初始位置为其所属班组的基地位置：班组 1 的设备初始位置在班组 1 基地，班组 2 的设备初始位置在班组 2 基地。每台设备具有确定的移动速度，同类型设备速度一致，具体取值从附件中获取。
+设备编号格式为 设备类型组别编号，如 PFM1-3 表示班组 1 的第 3 台精密灌装机。设备的初始位置为其所属班组的基地位置：班组 1 的设备初始位置在班组 1 基地，班组 2 的设备初始位置在班组 2 基地。每台设备具有确定的移动速度，同类型设备速度一致，具体取值从附件中获取。
 
 \subsubsection{距离矩阵}
 附件"车间距离表"提供了两个维度的距离信息：
