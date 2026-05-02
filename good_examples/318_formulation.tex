@@ -1,0 +1,73 @@
+\section{Problem Formulation}
+\label{sec:formulation}
+
+This section formally defines the DAG-constrained extended Flexible Job Shop Scheduling Problem (FJSP) studied in this paper. We first abstract the high-speed train bogie maintenance process into a graph-structured scheduling problem. We then introduce the disjunctive graph representation used to describe the dynamic scheduling state. Finally, we summarize the main structural characteristics that motivate the proposed solution framework.
+
+
+\subsection{DAG-Constrained Extended FJSP}
+\label{sec:dag_fjsp}
+
+In the classical FJSP, each job consists of a sequence of operations subject to linear precedence constraints, where operation $O_{i,j+1}$ can start only after operation $O_{ij}$ has been completed. However, high-speed train bogie maintenance exhibits more complex topological dependencies. A typical bogie overhaul process includes parallel disassembly of components, branch-specific repair and inspection procedures, and synchronization requirements before final assembly. For example, braking units, wheelsets, and traction-related components may be processed through different maintenance branches, while subsequent assembly operations can start only after several upstream branches have been completed. These dependencies cannot be represented adequately by simple linear operation chains. Instead, they naturally form a Directed Acyclic Graph (DAG).
+
+Let $\mathcal{J}=\{J_1,J_2,\dots,J_n\}$ denote the set of jobs and $\mathcal{M}=\{M_1,M_2,\dots,M_m\}$ denote the set of machines. Each job $J_i$ consists of $n_i$ operations, denoted by $\mathcal{O}_i=\{O_{i1},O_{i2},\dots,O_{i,n_i}\}$. The precedence relations among the operations of job $J_i$ are represented by a DAG $\mathcal{G}_i=(\mathcal{V}_i,\mathcal{E}_i)$, where $\mathcal{V}_i=\mathcal{O}_i$ is the set of operation nodes and $\mathcal{E}_i$ is the set of directed precedence arcs. If $(O_{ij},O_{ik})\in\mathcal{E}_i$, operation $O_{ij}$ must be completed before operation $O_{ik}$ can start. For each operation $O_{ij}$, let $P(O_{ij})$ and $S(O_{ij})$ denote its sets of direct predecessors and direct successors, respectively. An operation is eligible for scheduling if and only if all operations in its predecessor set have been completed.
+
+Each operation $O_{ij}$ can be processed on one machine selected from a subset of compatible machines $\mathcal{M}_{ij}\subseteq\mathcal{M}$. The processing time of operation $O_{ij}$ on machine $M_k\in\mathcal{M}_{ij}$ is denoted by $p_{ijk}$. The routing flexibility of an operation is therefore determined by the cardinality of its compatible machine set $|\mathcal{M}_{ij}|$. Each operation must be processed exactly once on one compatible machine, operations are non-preemptive, and each machine can process at most one operation at any time.
+The scheduling problem is to determine both the processing sequence of all operations and the machine assignment for each operation, while satisfying DAG precedence constraints and machine capacity constraints. The objective is to minimize the makespan: \(C_{\max}\),where \(C_{\max}=\max_{i\in\{1,\dots,n\}}\max_{O_{ij}\in\mathcal{T}_i} C_{ij}\). 
+Here, $C_{ij}$ denotes the completion time of operation $O_{ij}$, and $\mathcal{T}_i=\{O_{ij}\in\mathcal{O}_i:S(O_{ij})=\emptyset\}$ denotes the set of terminal operations of job $J_i$. 
+If a virtual sink node is introduced for each job, $C_{\max}$ can equivalently be defined as the maximum completion time of all virtual sink nodes.
+
+
+A key difference between the DAG-constrained FJSP and the classical FJSP lies in the construction of the eligible operation set. In the classical linear-precedence FJSP, each job has at most one next schedulable operation at each decision step. In contrast, under DAG precedence constraints, multiple operations from different branches of the same job may become eligible simultaneously, while a downstream operation may remain unavailable until all of its predecessor branches have been completed. Therefore, the eligible set at decision step $r$ can be defined as
+\begin{equation}
+	\label{eq:eligible_set}
+	\mathcal{O}_r=
+	\left\{
+	O_{ij}\in\mathcal{O}^{u}_r
+	\mid
+	P(O_{ij})\subseteq \mathcal{O}^{c}_r
+	\right\},
+\end{equation}
+where $\mathcal{O}^{u}_r$ and $\mathcal{O}^{c}_r$ denote the sets of unscheduled and completed operations at decision step $r$, respectively. The size and composition of $\mathcal{O}_r$ therefore evolve dynamically with the scheduling process, which significantly increases the complexity of operation selection.
+
+
+\subsection{Disjunctive Graph Representation}
+\label{sec:disjunctive_graph}
+
+To represent the scheduling state in a structured manner, the DAG-constrained FJSP is modeled as a disjunctive graph $G=(V,\mathcal{C},\mathcal{D})$. The node set
+\begin{equation}
+	V=\bigcup_{i=1}^{n}\mathcal{V}_i\cup\{S,T\}
+\end{equation}
+contains all operation nodes, a virtual source node $S$, and a virtual sink node $T$. The source node $S$ is connected to all root operations with no predecessors, while all terminal operations are connected to the sink node $T$.
+
+The edge set consists of conjunctive arcs and disjunctive arcs. The conjunctive arc set $\mathcal{C}$ includes all directed arcs that encode the DAG-based precedence constraints:
+\begin{equation}
+	\mathcal{C}=
+	\bigcup_{i=1}^{n}\mathcal{E}_i
+	\cup
+	\{(S,O_{ij})\mid P(O_{ij})=\emptyset\}
+	\cup
+	\{(O_{ij},T)\mid S(O_{ij})=\emptyset\}.
+\end{equation}
+Unlike the classical FJSP, where conjunctive arcs form simple operation chains, the conjunctive arcs in this study form general DAG structures, thereby capturing parallel branches, branch-specific sequences, and synchronization nodes in bogie maintenance.
+
+The disjunctive arc set $\mathcal{D}$ represents potential machine conflicts. For each machine $M_k$, let
+\begin{equation}
+	\mathcal{O}_k=\{O_{ij}\mid M_k\in\mathcal{M}_{ij}\}
+\end{equation}
+denote the set of operations that can be processed on machine $M_k$. The machine-specific disjunctive arc set is then defined as
+\begin{equation}
+	\mathcal{D}_k=
+	\left\{
+	\{O_{ij},O_{i'j'}\}
+	\mid
+	O_{ij},O_{i'j'}\in\mathcal{O}_k,\,
+	O_{ij}\neq O_{i'j'}
+	\right\},
+\end{equation}
+and the complete disjunctive arc set is given by
+\begin{equation}
+	\mathcal{D}=\bigcup_{k=1}^{m}\mathcal{D}_k.
+\end{equation}
+Each undirected disjunctive arc indicates that two operations may compete for the same machine. Once the corresponding machine assignments and processing sequence are determined, the relevant disjunctive arcs are oriented to represent the actual processing order on each machine.
+
+During sequential schedule generation, the graph state evolves dynamically. When an eligible operation $O_{ij}$ is selected and assigned to machine $M_k$, a directed machine arc is added from the last scheduled operation on $M_k$ to $O_{ij}$. This operation updates both the machine availability state and the partial ordering among operations assigned to the same machine. As scheduling proceeds, the initially unresolved disjunctive graph is gradually transformed into a partially directed graph that combines fixed DAG precedence relations with committed machine sequencing decisions. Therefore, the graph representation provides a compact description of the current scheduling state, including completed operations, eligible operations, remaining precedence constraints, machine assignments, and resource conflicts.
