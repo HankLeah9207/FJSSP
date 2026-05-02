@@ -1,0 +1,6 @@
+﻿Question,No,EquipmentID,Start,End,Start_s,End_s,Duration_s,Process,Crew,Workshop,EquipmentType
+P1,1,精密灌装机1-1,00:00:00,01:30:00,0,5400,5400,A1,1,A,Precision Filling Machine
+P1,2,自动化输送臂1-1,00:00:00,01:12:00,0,4320,4320,A1,1,A,Automated Conveying Arm
+P1,3,工业清洗机1-1,01:30:00,03:30:00,5400,12600,7200,A2,1,A,Industrial Cleaning Machine
+P1,4,高速抛光机1-1,01:30:00,06:30:00,5400,23400,18000,A2,1,A,High-speed Polishing Machine
+P1,5,自动传感多功能机1-1,06:30:00,11:30:00,23400,41400,18000,A3,1,A,Automatic Sensing Multi-Function Machine

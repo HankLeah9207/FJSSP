@@ -1,0 +1,10 @@
+﻿AuditItem,P1,P2,P3,P4
+工序完整性,PASS,PASS,PASS,PASS
+工序顺序约束,PASS,PASS,PASS,PASS
+设备类型匹配,PASS,PASS,PASS,PASS
+单设备不重叠,PASS,PASS,PASS,PASS
+双设备协同完成规则,PASS,PASS,PASS,PASS
+跨车间转运时间,N.A.,PASS,PASS,PASS
+初始位置转运时间,N.A.,PASS,PASS,PASS
+预算约束,N.A.,N.A.,N.A.,PASS
+Objective-Bound证书,PASS,PASS,PASS,PASS
