@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 
 try:
     from ortools.sat.python import cp_model
@@ -40,6 +41,7 @@ PROCESSES = [
 ]
 
 TRAVEL_TIME = 200  # seconds, Crew 1 base to Workshop A
+SUMMARY_PATH = Path(__file__).with_name("Q1_solution_summary.md")
 
 
 def main(include_travel_time: bool = False):
@@ -125,6 +127,30 @@ def main(include_travel_time: bool = False):
 
     rows.sort(key=lambda r: (r["start"], r["process_id"], r["equipment_id"]))
 
+    summary_lines = [
+        "# Question 1 Solution Summary",
+        "",
+        "Single-crew synchronous process-level model.",
+        "",
+        f"- Solver status: {status_name}",
+        f"- Best makespan: {makespan} s ({seconds_to_hms(makespan)})",
+        f"- Travel time included: {'Yes' if include_travel_time else 'No'}",
+        "",
+        "## Table 1",
+        "",
+        "| No. | Equipment ID | Process | Start | End | Duration (s) | Equipment Type |",
+        "|-----|-------------|---------|-------|-----|-------------|----------------|",
+    ]
+
+    for index, r in enumerate(rows, start=1):
+        summary_lines.append(
+            f"| {index} | {r['equipment_id']} | {r['process_id']} | "
+            f"{seconds_to_hms(r['start'])} | {seconds_to_hms(r['end'])} | "
+            f"{r['duration']} | {r['equipment_type']} |"
+        )
+
+    SUMMARY_PATH.write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
+
     print("Table 1: Equipment Operation Schedule")
     print("-" * 105)
     header = f"{'Equipment ID':<20} {'Process':<8} {'Start Time':<12} {'End Time':<12} {'Duration (s)':<14} {'Equipment Type'}"
@@ -137,6 +163,7 @@ def main(include_travel_time: bool = False):
             f"{r['duration']:<14} {r['equipment_type']}"
         )
     print("-" * 105)
+    print(f"Summary saved to: {SUMMARY_PATH}")
 
 
 if __name__ == "__main__":
