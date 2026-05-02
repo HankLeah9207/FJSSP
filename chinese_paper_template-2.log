@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex 2026.3.23)  2 MAY 2026 23:28
+This is XeTeX, Version 3.141592653-2.6-0.999998 (TeX Live 2026) (preloaded format=xelatex 2026.3.23)  2 MAY 2026 23:47
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -792,9 +792,7 @@ Package: booktabs 2020/01/12 v1.61803398 Publication quality tables
 \@lastruleclass=\count344
 \@thisrulewidth=\dimen277
 )
-(/usr/local/texlive/2026/texmf-dist/tex/latex/newunicodechar/newunicodechar.sty
-Package: newunicodechar 2018/04/08 v1.2 Defining Unicode characters
-) (/usr/local/texlive/2026/texmf-dist/tex/latex/underscore/underscore.sty
+(/usr/local/texlive/2026/texmf-dist/tex/latex/underscore/underscore.sty
 Package: underscore 2006/09/13
 LaTeX Info: Redefining \_ on input line 42.
 )
@@ -852,33 +850,33 @@ Package fontspec Info:
 (fontspec)             - 'normal' (m/n) with NFSS spec.:
 (fontspec)             <->"STSong/OT:script=hani;language=dflt;"
 
-Package hyperref Info: Option `colorlinks' set `false' on input line 61.
+Package hyperref Info: Option `colorlinks' set `false' on input line 58.
 \c@theorem=\count345
 \c@proposition=\count346
 
 (./chinese_paper_template-2.aux)
 \openout1 = `chinese_paper_template-2.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 122.
-LaTeX Font Info:    ... okay on input line 122.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 116.
+LaTeX Font Info:    ... okay on input line 116.
 
 Package fontspec Info: 
 (fontspec)             Adjusting the maths setup (use [no-math] to avoid
@@ -886,57 +884,57 @@ Package fontspec Info:
 
 \symlegacymaths=\mathgroup6
 LaTeX Font Info:    Overwriting symbol font `legacymaths' in version `bold'
-(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 122.
-LaTeX Font Info:    Redeclaring math accent \acute on input line 122.
-LaTeX Font Info:    Redeclaring math accent \grave on input line 122.
-LaTeX Font Info:    Redeclaring math accent \ddot on input line 122.
-LaTeX Font Info:    Redeclaring math accent \tilde on input line 122.
-LaTeX Font Info:    Redeclaring math accent \bar on input line 122.
-LaTeX Font Info:    Redeclaring math accent \breve on input line 122.
-LaTeX Font Info:    Redeclaring math accent \check on input line 122.
-LaTeX Font Info:    Redeclaring math accent \hat on input line 122.
-LaTeX Font Info:    Redeclaring math accent \dot on input line 122.
-LaTeX Font Info:    Redeclaring math accent \mathring on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Delta on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Theta on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Xi on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Pi on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Phi on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Psi on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \Omega on input line 122.
-LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 122.
-LaTeX Font Info:    Redeclaring symbol font `operators' on input line 122.
+(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 116.
+LaTeX Font Info:    Redeclaring math accent \acute on input line 116.
+LaTeX Font Info:    Redeclaring math accent \grave on input line 116.
+LaTeX Font Info:    Redeclaring math accent \ddot on input line 116.
+LaTeX Font Info:    Redeclaring math accent \tilde on input line 116.
+LaTeX Font Info:    Redeclaring math accent \bar on input line 116.
+LaTeX Font Info:    Redeclaring math accent \breve on input line 116.
+LaTeX Font Info:    Redeclaring math accent \check on input line 116.
+LaTeX Font Info:    Redeclaring math accent \hat on input line 116.
+LaTeX Font Info:    Redeclaring math accent \dot on input line 116.
+LaTeX Font Info:    Redeclaring math accent \mathring on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Delta on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Theta on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Xi on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Pi on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Phi on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Psi on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \Omega on input line 116.
+LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 116.
+LaTeX Font Info:    Redeclaring symbol font `operators' on input line 116.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `normal' on input line 122.
+(Font)              `operators' in the math version `normal' on input line 116.
 
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
-(Font)                  OT1/cmr/m/n --> TU/lmr/m/n on input line 122.
+(Font)                  OT1/cmr/m/n --> TU/lmr/m/n on input line 116.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `bold' on input line 122.
+(Font)              `operators' in the math version `bold' on input line 116.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
-(Font)                  OT1/cmr/bx/n --> TU/lmr/m/n on input line 122.
+(Font)                  OT1/cmr/bx/n --> TU/lmr/m/n on input line 116.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
-(Font)                  TU/lmr/m/n --> TU/lmr/m/n on input line 122.
+(Font)                  TU/lmr/m/n --> TU/lmr/m/n on input line 116.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
-(Font)                  OT1/cmr/m/it --> TU/lmr/m/it on input line 122.
+(Font)                  OT1/cmr/m/it --> TU/lmr/m/it on input line 116.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
-(Font)                  OT1/cmr/bx/n --> TU/lmr/b/n on input line 122.
+(Font)                  OT1/cmr/bx/n --> TU/lmr/b/n on input line 116.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 122.
+(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 116.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
-(Font)                  OT1/cmtt/m/n --> TU/Menlo(0)/m/n on input line 122.
+(Font)                  OT1/cmtt/m/n --> TU/Menlo(0)/m/n on input line 116.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
-(Font)                  TU/lmr/m/n --> TU/lmr/b/n on input line 122.
+(Font)                  TU/lmr/m/n --> TU/lmr/b/n on input line 116.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
-(Font)                  OT1/cmr/bx/it --> TU/lmr/b/it on input line 122.
+(Font)                  OT1/cmr/bx/it --> TU/lmr/b/it on input line 116.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 122.
+(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 116.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  OT1/cmtt/m/n --> TU/Menlo(0)/b/n on input line 122.
+(Font)                  OT1/cmtt/m/n --> TU/Menlo(0)/b/n on input line 116.
 
 *geometry* driver: auto-detecting
 *geometry* detected driver: xetex
@@ -972,7 +970,7 @@ LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
 * \@reversemarginfalse
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
-Package hyperref Info: Link coloring OFF on input line 122.
+Package hyperref Info: Link coloring OFF on input line 116.
 (./chinese_paper_template-2.out) (./chinese_paper_template-2.out)
 \@outlinefile=\write3
 \openout3 = `chinese_paper_template-2.out'.
@@ -1010,65 +1008,35 @@ Package fontspec Info:
 (fontspec)             - 'normal' (m/n) with NFSS spec.:
 (fontspec)             <->"STHeiti/OT:script=hani;language=dflt;"
 
-LaTeX Font Info:    Trying to load font information for U+msa on input line 158
+LaTeX Font Info:    Trying to load font information for U+msa on input line 152
 .
 
 (/usr/local/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 158
+LaTeX Font Info:    Trying to load font information for U+msb on input line 152
 .
 
 (/usr/local/texlive/2026/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-Overfull \hbox (274.14001pt too wide) in paragraph at lines 158--171
+Overfull \hbox (274.14001pt too wide) in paragraph at lines 152--165
  [] 
  []
 
 [1
 
 ] [2] [3]
-Overfull \hbox (138.01437pt too wide) in paragraph at lines 272--285
+Overfull \hbox (138.01437pt too wide) in paragraph at lines 266--279
  [] 
  []
 
 
-Overfull \hbox (110.06654pt too wide) in paragraph at lines 289--303
+Overfull \hbox (99.63353pt too wide) in paragraph at lines 283--297
  [] 
  []
 
 [4]
-Overfull \hbox (114.52797pt too wide) in paragraph at lines 341--353
- [] 
- []
-
-[5]
-Overfull \hbox (233.256pt too wide) in paragraph at lines 397--409
- [] 
- []
-
-[6]
-Overfull \hbox (19.51924pt too wide) in paragraph at lines 418--419
-[]\TU/STSong(0)/b/n/12 维 度 二：|  车 间 之 间 的 距 离 矩 阵。|  \TU/STSong(0)/m/n/12 五 个 车
- 间 两 两 之 间 的 距 离 记 为 $\OML/cmm/m/it/12 d[]$ |\TU/STSong(0)/m/n/12 （$\OML/cmm/m/
-it/12 i; j \OMS/cmsy/m/n/12 2 f\OML/cmm/m/it/12 A; B; C; D; E\OMS/cmsy/m/n/12 g
-$\TU/STSong(0)/m/n/12 ） ，|
- []
-
-[7] [8] [9]
-Overfull \hbox (33.40704pt too wide) detected at line 600
-\OML/cmm/m/it/12 C\OT1/cmr/m/n/12 1 \OMS/cmsy/m/n/12 ! \OML/cmm/m/it/12 C\OT1/c
-mr/m/n/12 2 \OMS/cmsy/m/n/12 ! \OML/cmm/m/it/12 C\OT1/cmr/m/n/12 3[]1 \OMS/cmsy
-/m/n/12 ! \OML/cmm/m/it/12 C\OT1/cmr/m/n/12 4[]1 \OMS/cmsy/m/n/12 ! \OML/cmm/m/
-it/12 C\OT1/cmr/m/n/12 5[]1 \OMS/cmsy/m/n/12 ! \OML/cmm/m/it/12 C\OT1/cmr/m/n/1
-2 3[]2 \OMS/cmsy/m/n/12 ! \OML/cmm/m/it/12 C\OT1/cmr/m/n/12 4[]2 \OMS/cmsy/m/n/
-12 ! \OML/cmm/m/it/12 C\OT1/cmr/m/n/12 5[]2 \OMS/cmsy/m/n/12 ! \OML/cmm/m/it/12
- C\OT1/cmr/m/n/12 3[]3 \OMS/cmsy/m/n/12 ! \OML/cmm/m/it/12 C\OT1/cmr/m/n/12 4[]
-3 \OMS/cmsy/m/n/12 ! \OML/cmm/m/it/12 C\OT1/cmr/m/n/12 5[]3\OML/cmm/m/it/12 :
- []
-
-[10] [11]
 
 Package fontspec Info: 
 (fontspec)             Script 'CJK' not explicitly supported within font
@@ -1103,202 +1071,43 @@ Package fontspec Info:
 (fontspec)             <->"STFangsong/OT:script=hani;language=dflt;"
 
 
-Overfull \hbox (166.33998pt too wide) in paragraph at lines 682--696
- [] 
- []
-
-[12] [13] [14]
-Overfull \hbox (4.47726pt too wide) in paragraph at lines 836--837
-[]\TU/STSong(0)/b/n/12 代 码 实 现：|  \TU/STSong(0)/m/n/12 在 设 备 被 分 配 执 行 的 首 个 任 
-务 的 $\OML/cmm/m/it/12 S[]$ \TU/STSong(0)/m/n/12 变 量 上 加 最 小 约 束 \TU/Menlo(0)/m/
-n/12 model.Add(S_-
- []
-
-[15] [16] [17]
-Overfull \hbox (15.22636pt too wide) in paragraph at lines 975--986
- [] 
- []
-
-[18]
-Overfull \hbox (45.15015pt too wide) in paragraph at lines 1019--1033
- [] 
- []
-
-
-Overfull \hbox (36.02933pt too wide) in paragraph at lines 1079--1079
-[]\TU/Menlo(0)/m/n/12 7           \TU/STFangsong(0)/m/n/12 将  \TU/Menlo(0)/m/n/
-12 C3→C4→C5  \TU/STFangsong(0)/m/n/12 子 流 程 复 制  \TU/Menlo(0)/m/n/12 3  \TU/STF
-angsong(0)/m/n/12 遍 ， 生 成  \TU/Menlo(0)/m/n/12 C3_1,C4_1,C5_1,...,C5_3[] 
- []
-
-[19]
-Overfull \hbox (21.58011pt too wide) in paragraph at lines 1079--1079
-[]\TU/Menlo(0)/m/n/12 26         p_{jk} ← ⌈ q_j / e_{j,r} ⌉  //  \TU/STFangsong
-(0)/m/n/12 对 该 类 型 每 台 设 备  \TU/Menlo(0)/m/n/12 k ∈ K_r[] 
- []
-
-
-Overfull \hbox (14.3555pt too wide) in paragraph at lines 1079--1079
-[]\TU/Menlo(0)/m/n/12 35 T_max_init ← Σ_{j∈J} max_{k∈K_j^*} p_jk + Σ  \TU/STFan
-gsong(0)/m/n/12 跨 车 间 转 运 时 间 上 界 [] 
- []
-
-
-Overfull \hbox (14.3555pt too wide) in paragraph at lines 1144--1144
-[]\TU/Menlo(0)/m/n/12 10      \TU/STFangsong(0)/m/n/12 创 建 整 型 变 量  \TU/Menlo(0
-)/m/n/12 C_j ∈ [0, T_max_init]         //  \TU/STFangsong(0)/m/n/12 工 序 完 成 时 刻
- [] 
- []
-
-[20]
-Overfull \hbox (50.47855pt too wide) in paragraph at lines 1144--1144
-[]\TU/Menlo(0)/m/n/12 23     //  \TU/STFangsong(0)/m/n/12 即 约 束  \TU/Menlo(0)/m
-/n/12 S_{jk}  \TU/STFangsong(0)/m/n/12 和  \TU/Menlo(0)/m/n/12 C_{jk}  \TU/STFan
-gsong(0)/m/n/12 满 足 设 备 独 占 性 ， 且 工 序 完 成 时 刻 取  \TU/Menlo(0)/m/n/12 max[] 
- []
-
-
-Overfull \hbox (64.92776pt too wide) in paragraph at lines 1144--1144
-[]\TU/Menlo(0)/m/n/12 25         model_P1.AddMaxEquality(C_j, {C_{jk} : k ∈ K_j
-^*})  //  \TU/STFangsong(0)/m/n/12 式  \TU/Menlo(0)/m/n/12 5-7[] 
- []
-
-
-Overfull \hbox (101.05081pt too wide) in paragraph at lines 1144--1144
-[]\TU/Menlo(0)/m/n/12 33     intervals ← [interval(S_{jk}, p_{jk}) for j assign
-ed to k if x_{jk}=1][] 
- []
-
-
-Overfull \hbox (21.58011pt too wide) in paragraph at lines 1144--1144
-[]\TU/Menlo(0)/m/n/12 43      \TU/STFangsong(0)/m/n/12 输 出  \TU/Menlo(0)/m/n/12
- solution.C_max, solution.assignment, solution.schedule[] 
- []
-
-[21]
-Overfull \hbox (36.02933pt too wide) in paragraph at lines 1242--1242
-[]\TU/Menlo(0)/m/n/12 43                 travel ← τ_{k, L(prev_task), L(j)}  //
-  \TU/STFangsong(0)/m/n/12 跨 车 间 转 运 [] 
- []
-
-[22]
-Overfull \hbox (21.58011pt too wide) in paragraph at lines 1242--1242
-[]\TU/Menlo(0)/m/n/12 45                 travel ← τ_{k, L_0(k), L(j)}        //
-  \TU/STFangsong(0)/m/n/12 首 次 转 运 [] 
- []
-
-
-Overfull \hbox (50.47855pt too wide) in paragraph at lines 1242--1242
-[]\TU/Menlo(0)/m/n/12 47                 start = S_{jk} - travel,            //
-  \TU/STFangsong(0)/m/n/12 前 置 转 运 占 用 [] 
- []
-
-
-Overfull \hbox (50.47855pt too wide) in paragraph at lines 1242--1242
-[]\TU/Menlo(0)/m/n/12 52             intervals.append((travel, interval))    //
-  \TU/STFangsong(0)/m/n/12 记 录 前 置 转 运 [] 
- []
-
-
-Overfull \hbox (50.47855pt too wide) in paragraph at lines 1242--1242
-[]\TU/Menlo(0)/m/n/12 53         model_P2.AddNoOverlap(intervals)            //
-  \TU/STFangsong(0)/m/n/12 设 备 不 可 重 叠 [] 
- []
-
-
-Overfull \hbox (21.58011pt too wide) in paragraph at lines 1242--1242
-[]\TU/Menlo(0)/m/n/12 57         model_P2.Add(S_{jk} >= τ_{k, L_0(k), L(j)})  /
-/  \TU/STFangsong(0)/m/n/12 式  \TU/Menlo(0)/m/n/12 5-12[] 
- []
-
-
-Overfull \hbox (21.58011pt too wide) in paragraph at lines 1242--1242
-[]\TU/Menlo(0)/m/n/12 68      \TU/STFangsong(0)/m/n/12 输 出  \TU/Menlo(0)/m/n/12
- solution.C_max, solution.assignment, solution.schedule[] 
- []
-
-[23]
-Overfull \hbox (7.13089pt too wide) in paragraph at lines 1337--1337
-[]\TU/Menlo(0)/m/n/12 12 //  \TU/STFangsong(0)/m/n/12 约 束 施 加 （ 与  \TU/Menlo(0)
-/m/n/12 P2  \TU/STFangsong(0)/m/n/12 类 似 ， 区 别 在 于  \TU/Menlo(0)/m/n/12 K=32  \
-TU/STFangsong(0)/m/n/12 且  \TU/Menlo(0)/m/n/12 L_0(k)  \TU/STFangsong(0)/m/n/12
- 按 班 组 区 分 ） [] 
- []
-
-[24]
-Overfull \hbox (93.8262pt too wide) in paragraph at lines 1337--1337
-[]\TU/Menlo(0)/m/n/12 41                 travel ← τ_{k, L_0(k), L(j)}  // L_0(k
-)  \TU/STFangsong(0)/m/n/12 取 决 于  \TU/Menlo(0)/m/n/12 k  \TU/STFangsong(0)/m/n
-/12 所 属 班 组 [] 
- []
-
-
-Overfull \hbox (21.58011pt too wide) in paragraph at lines 1337--1337
-[]\TU/Menlo(0)/m/n/12 68      \TU/STFangsong(0)/m/n/12 输 出  \TU/Menlo(0)/m/n/12
- solution.C_max, solution.assignment, solution.schedule[] 
- []
-
-[25] [26]
-Overfull \hbox (43.25394pt too wide) in paragraph at lines 1437--1437
-[]\TU/Menlo(0)/m/n/12 43         ELSE IF makespan == best_makespan AND cost(z) 
-< best_cost:[] 
- []
-
-[27]
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1480.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `\max' on input line 1480.
-
-
-Package hyperref Warning: Token not allowed in a PDF string (Unicode):
-(hyperref)                removing `math shift' on input line 1480.
-
-[28] [29] [30] [31]
-Overfull \hbox (12.756pt too wide) in paragraph at lines 1707--1717
- [] 
- []
-
-[32] [33] [34] [35] [36] [37] [38]
-Overfull \hbox (143.37119pt too wide) in paragraph at lines 2053--2064
+Overfull \hbox (141.1923pt too wide) in paragraph at lines 339--350
  [][] 
  []
 
-[39] [40] [41] [42] [43]
-Overfull \hbox (6.58798pt too wide) in paragraph at lines 2332--2361
+[5] [6]
+Overfull \hbox (22.00415pt too wide) in paragraph at lines 418--419
+[]\TU/lmr/m/n/12 P2 \TU/STSong(0)/m/n/12 首 次 从 班 组 \TU/lmr/m/n/12 1 \TU/STSong(
+0)/m/n/12 基 地 到 各 车 间 的 时 间 由 代 码 中 的 \TU/Menlo(0)/m/n/12 TRANSPORT[(BASE, work
+shop)]
+ []
+
+[7]
+Overfull \hbox (158.92801pt too wide) in paragraph at lines 518--529
  [][] 
  []
 
-[44] [45] [46] [47] [48]
-Overfull \hbox (58.43997pt too wide) in paragraph at lines 2660--2674
+[8] [9] [10] [11]
+Overfull \hbox (128.91602pt too wide) in paragraph at lines 729--740
  [][] 
  []
 
-[49] [50]
-Overfull \hbox (26.7783pt too wide) in paragraph at lines 2697--2714
- [][] 
- []
-
-[51] [52] [53] [54] [55] [56] [57] [58] [59] [60]
-(./chinese_paper_template-2.aux)
+[12] [13] (./chinese_paper_template-2.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2022/07/14>
  ***********
 Package rerunfilecheck Info: File `chinese_paper_template-2.out' has not change
 d.
-(rerunfilecheck)             Checksum: 075D00473BC9D8E5DB2F11E2CC391256;26891.
+(rerunfilecheck)             Checksum: 4EE4F6171FBE74748532CFE271A7A8E2;7419.
  ) 
 Here is how much of TeX's memory you used:
- 17195 strings out of 468168
- 386857 string characters out of 5432815
- 854240 words of memory out of 5000000
- 45656 multiletter control sequences out of 15000+600000
- 636926 words of font info for 116 fonts, out of 8000000 for 9000
+ 16893 strings out of 468168
+ 373251 string characters out of 5432815
+ 830829 words of memory out of 5000000
+ 45368 multiletter control sequences out of 15000+600000
+ 634688 words of font info for 101 fonts, out of 8000000 for 9000
  1348 hyphenation exceptions out of 8191
- 93i,15n,115p,1213b,912s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 93i,10n,115p,1213b,486s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on chinese_paper_template-2.pdf (60 pages).
+Output written on chinese_paper_template-2.pdf (13 pages).
